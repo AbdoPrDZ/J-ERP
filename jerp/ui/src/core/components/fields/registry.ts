@@ -8,6 +8,8 @@ export interface FieldProps {
   onChange: (value: unknown) => void;
   readonly?: boolean;
   error?: string;
+  model?: string;
+  recordId?: number | string | null;
 }
 
 export type FieldComponent = ComponentType<FieldProps>;

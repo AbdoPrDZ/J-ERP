@@ -1,3 +1,4 @@
+import { FieldHelp } from './fields/FieldHelp';
 import { fieldRegistry } from './fields/registry';
 import type { FormSchema } from '../types';
 
@@ -23,9 +24,10 @@ export function Form({ schema, values, onChange, onSubmit, readonly }: FormProps
           const Widget = fieldRegistry.get(field.ttype);
           return (
             <label key={field.name} className="block">
-              <span className="mb-1 block text-sm font-medium text-slate-700">
+              <span className="mb-1 flex items-center gap-1.5 text-sm font-medium text-slate-700">
                 {field.label}
-                {field.required ? <span className="text-red-500"> *</span> : null}
+                {field.required ? <span className="text-red-500">*</span> : null}
+                {field.help ? <FieldHelp text={field.help} /> : null}
               </span>
               {Widget ? (
                 <Widget
@@ -39,9 +41,6 @@ export function Form({ schema, values, onChange, onSubmit, readonly }: FormProps
                   No widget registered for type “{field.ttype}”.
                 </span>
               )}
-              {field.help ? (
-                <span className="mt-1 block text-xs text-slate-500">{field.help}</span>
-              ) : null}
             </label>
           );
         })}
@@ -49,7 +48,7 @@ export function Form({ schema, values, onChange, onSubmit, readonly }: FormProps
       {onSubmit && !readonly ? (
         <button
           type="submit"
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
         >
           Save
         </button>

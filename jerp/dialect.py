@@ -142,6 +142,18 @@ class PostgresDialect:
   def drop_table_sql(self, table: str) -> str:
     return f'DROP TABLE IF EXISTS {quote_table(table)} CASCADE'
 
+  def rename_table_sql(self, old: str, new: str) -> str:
+    return (
+      f'ALTER TABLE {quote_table(old)} '
+      f'RENAME TO {quote_ident(new)}'
+    )
+
+  def rename_index_sql(self, old: str, new: str) -> str:
+    return (
+      f'ALTER INDEX {quote_ident(old)} '
+      f'RENAME TO {quote_ident(new)}'
+    )
+
   def index_name(self, table: str, column: str) -> str:
     return f'{table}_{column}_idx'
 

@@ -6,8 +6,12 @@ export interface FieldDescriptor {
   readonly?: boolean;
   hide?: boolean;
   help?: string | null;
+  extension?: boolean;
+  size?: number;
+  has_default?: boolean;
   selection?: [string, string][];
   relation?: string | null;
+  multi_language?: boolean;
   default?: unknown;
 }
 

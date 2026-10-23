@@ -1,0 +1,12 @@
+[
+  {
+    "_key": "l10n_us.sys_country_us",
+    "name": {
+      "en": "United States",
+      "fr": "États-Unis",
+      "ar": "الولايات المتحدة"
+    },
+    "code": "US",
+    "phone_code": "1"
+  }
+]

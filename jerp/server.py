@@ -132,7 +132,7 @@ class Application:
     if path == '/db/manager':
       return None
 
-    selected = request.cookies.get('jerp_db')
+    selected = request.database()
     if not selected:
       return None
 

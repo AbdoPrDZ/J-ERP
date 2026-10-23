@@ -38,6 +38,7 @@ class Field:
     readonly=False,
     help=None,
     hide=False,
+    multi_language=False,
   ):
     self.name = name
     self.required = required
@@ -50,6 +51,9 @@ class Field:
     #: Exclude the field's value from API record data (reads). It stays in the
     #: field schema so forms can still write it (e.g. passwords).
     self.hide = hide
+    #: Store alternate-language values in ``sys.multi_lang_char`` while the
+    #: column itself keeps the default language value.
+    self.multi_language = bool(multi_language)
     self.attr_name = None
 
   # --- descriptor protocol ------------------------------------------------
@@ -247,8 +251,8 @@ class SelectionField(StringField):
 class Many2oneField(BigIntField):
   ttype = 'many2one'
 
-  def __init__(self, name=None, comodel=None, **kwargs):
-    super().__init__(name=name, **kwargs)
+  def __init__(self, name=None, comodel=None, index=True, **kwargs):
+    super().__init__(name=name, index=index, **kwargs)
     self.comodel = comodel
 
 

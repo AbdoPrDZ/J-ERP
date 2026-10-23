@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from urllib.parse import quote
+
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
@@ -33,7 +37,7 @@ class EntryPointController(controller.Controller):
     if len(databases) == 1:
       result = response.redirect('/login')
       result.headers['Set-Cookie'] = (
-        f'jerp_db={databases[0]}; Path=/; SameSite=Lax'
+        f'jerp_db={quote(databases[0], safe="")}; Path=/; SameSite=Lax'
       )
       return result
 
@@ -54,6 +58,10 @@ class EntryPointController(controller.Controller):
     if name:
       from jerp import views
 
+      if not views.view_installed(name):
+        return response.not_found(
+          f'View "{name}" is not installed in this database.'
+        )
       if views.view_auth(name) and not _logged_in():
         return response.redirect('/login')
       return response.render(name, query)

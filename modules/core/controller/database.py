@@ -7,12 +7,15 @@ scope the active database for subsequent requests.
 
 from __future__ import annotations
 
-import re
+from urllib.parse import quote
 
+from jerp import security
+from jerp.db import is_valid_database_name
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
-_NAME_RE = re.compile(r'^[a-z_][a-z0-9_]{0,62}$')
+#: Databases that must never be dropped from the UI/API.
+PROTECTED_DATABASES = {'postgres', 'template0', 'template1'}
 
 
 class DatabaseController(controller.Controller):
@@ -36,11 +39,18 @@ class DatabaseController(controller.Controller):
   @router.post('/databases')
   def create(self):
     payload = self._payload()
-    name = str(payload.get('name') or '').strip().lower()
-    if not _NAME_RE.match(name):
+    denied = self._check_master_key(payload)
+    if denied is not None:
+      return denied
+
+    name = str(payload.get('name') or '')
+    if not is_valid_database_name(name):
       return response.json(
         {'error': 'invalid_name',
-         'message': 'Use lowercase letters, digits and underscores (max 63).'},
+         'message': (
+           'Use a non-empty name up to 63 bytes. Uppercase letters, spaces '
+           'and punctuation are allowed.'
+         )},
         status=400,
       )
 
@@ -69,7 +79,7 @@ class DatabaseController(controller.Controller):
         registry.install(module)
 
       # Seed the admin user inside the new database.
-      admin_model = registry.get('user')
+      admin_model = registry.get('sys.user')
       if admin_model is not None:
         with environment.using(name):
           admin_model.create(
@@ -89,7 +99,7 @@ class DatabaseController(controller.Controller):
 
   @router.post('/databases/select')
   def select(self):
-    name = str(self._payload().get('name') or '').strip()
+    name = str(self._payload().get('name') or '')
     manager = Environment.instance.databases
     if not name or not manager.exists(name):
       return response.json(
@@ -98,10 +108,93 @@ class DatabaseController(controller.Controller):
       )
 
     result = response.json({'selected': name})
-    result.headers['Set-Cookie'] = f'jerp_db={name}; Path=/; SameSite=Lax'
+    result.headers['Set-Cookie'] = (
+      f'jerp_db={quote(name, safe="")}; Path=/; SameSite=Lax'
+    )
+    return result
+
+  @router.post('/databases/delete')
+  def delete(self):
+    """Drop a database and all of its data.
+
+    Requires ``confirm`` to equal the database name. The active database's
+    cookie is cleared so the next request returns to the manager.
+    """
+
+    payload = self._payload()
+    denied = self._check_master_key(payload)
+    if denied is not None:
+      return denied
+
+    name = str(payload.get('name') or '')
+    confirm = str(payload.get('confirm') or '')
+
+    if not is_valid_database_name(name):
+      return response.json(
+        {'error': 'invalid_name',
+         'message': 'Invalid database name.'},
+        status=400,
+      )
+    if name in PROTECTED_DATABASES:
+      return response.json(
+        {'error': 'protected',
+         'message': f'Database "{name}" is protected and cannot be deleted.'},
+        status=400,
+      )
+    if confirm != name:
+      return response.json(
+        {'error': 'confirm_required',
+         'message': f'Type "{name}" to confirm deletion.'},
+        status=400,
+      )
+
+    environment = Environment.instance
+    manager = environment.databases
+    if not manager.exists(name):
+      return response.json(
+        {'error': 'not_found', 'message': f'Database "{name}" does not exist.'},
+        status=404,
+      )
+
+    active = environment.active_database == name
+    try:
+      manager.drop(name)
+    except Exception as exc:
+      return response.json(
+        {'error': 'delete_failed', 'message': str(exc)}, status=500
+      )
+
+    result = response.json({'deleted': name, 'active': active})
+    if active:
+      result.headers['Set-Cookie'] = 'jerp_db=; Path=/; Max-Age=0; SameSite=Lax'
     return result
 
   @staticmethod
   def _payload() -> dict:
     req = request.current()
     return req.json() if req is not None else {}
+
+  @staticmethod
+  def _check_master_key(payload: dict):
+    """Validate the manager master key before a destructive operation."""
+
+    expected = Environment.instance.databases.config.master_key
+    if not expected:
+      return response.json(
+        {
+          'error': 'master_key_not_configured',
+          'message': (
+            'No master key is configured. Set security.master_key in '
+            'jerp.config.json or the JERP_MASTER_KEY environment variable.'
+          ),
+        },
+        status=503,
+      )
+
+    supplied = str(payload.get('master_key') or '')
+    if not security.verify_secret(supplied, expected):
+      return response.json(
+        {'error': 'invalid_master_key', 'message': 'Invalid master key.'},
+        status=403,
+      )
+    return None

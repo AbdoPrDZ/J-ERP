@@ -5,6 +5,7 @@ import {
   Table,
   TableField,
   Cards,
+  CardField,
   Form,
   FormField,
   FormGroup,
@@ -32,7 +33,7 @@ function ChangePassword() {
     setBusy(true);
     setError(null);
     try {
-      await model('user').update(record.id as number, { password });
+      await model('sys.user').update(record.id as number, { password });
       setPassword('');
       action?.close();
     } catch (err) {
@@ -52,12 +53,12 @@ function ChangePassword() {
           </div>
         ) : null}
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">
+          <span className="mb-1 block text-sm font-medium text-brand-navy">
             New password
           </span>
           <input
             type="password"
-            className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
@@ -66,7 +67,7 @@ function ChangePassword() {
       <ActionFooter>
         <button
           type="button"
-          className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5"
           onClick={() => action?.close()}
           disabled={busy}
         >
@@ -74,7 +75,7 @@ function ChangePassword() {
         </button>
         <button
           type="button"
-          className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
           onClick={() => void submit()}
           disabled={busy || !password}
         >
@@ -90,7 +91,7 @@ export default function Users() {
     <Page
       name="core.users"
       title="Users"
-      model="user"
+      model="sys.user"
       searchBar
       create
       update
@@ -99,21 +100,23 @@ export default function Users() {
       views={['list', 'cards']}
     >
       <PageContent>
-        <Table model="user" emptyMessage="No users found.">
-          <TableField name="name" label="Name" />
+        <Table model="sys.user" emptyMessage="No users found.">
+          <TableField name="name" />
         </Table>
-        <Cards model="user" emptyMessage="No users found.">
-          <TableField name="name" label="Name" />
+
+        <Cards model="sys.user" emptyMessage="No users found.">
+          <CardField name="avatar" />
+          <CardField name="name" />
         </Cards>
-        <Form model="user" title="User">
+
+        <Form model="sys.user" title="User">
           <Action label="Change Password">
             <ChangePassword />
           </Action>
-          <FormGroup label="General">
-            <FormField name="name" label="Name" />
-            <FormField name="username" label="Username" />
-            <FormField name="image" label="Avatar" />
-          </FormGroup>
+
+          <FormField name="name" />
+          <FormField name="username" />
+          <FormField name="image" />
         </Form>
       </PageContent>
     </Page>

@@ -134,7 +134,7 @@ from jerp import fields, models
 
 
 class Product(models.Model):
-  _table = 'products'
+  _name = 'stock.product'
 
   name = fields.StringField(name='Name', required=True)
   price = fields.FloatField(name='Price')
@@ -148,15 +148,15 @@ import { Page, PageContent, Table, TableField, Form, FormField } from '@jerp/ui'
 
 export default function Products() {
   return (
-    <Page name="stock.products" title="Products" model="product" searchBar create update delete>
+    <Page name="stock.products" title="Products" model="stock.product" searchBar create update delete>
       <PageContent>
-        <Table model="product">
-          <TableField name="name" label="Name" />
-          <TableField name="price" label="Price" />
+        <Table model="stock.product">
+          <TableField name="name" />
+          <TableField name="price" />
         </Table>
-        <Form model="product" title="Product">
-          <FormField name="name" label="Name" />
-          <FormField name="price" label="Price" />
+        <Form model="stock.product" title="Product">
+          <FormField name="name" />
+          <FormField name="price" />
         </Form>
       </PageContent>
     </Page>

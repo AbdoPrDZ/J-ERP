@@ -1,6 +1,6 @@
 """Serve stored files.
 
-A file is only served if it is registered in the active database's ``files``
+A file is only served if it is registered in the active database's ``sys_file``
 table (matched by ``path``); otherwise 404. This prevents serving arbitrary
 files that just happen to be on disk.
 """
@@ -21,7 +21,11 @@ class StorageController(controller.Controller):
     if not Environment.instance.active_database:
       return response.not_found('Not Found')
 
-    from modules.core.models.file import File
+    registry = Environment.instance.registry()
+    registry.ensure_loaded()
+    File = registry.get('sys.file')
+    if File is None:
+      return response.not_found('Not Found')
 
     records = File.search([('path', '=', name)], limit=1)
     if not records:

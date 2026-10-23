@@ -37,3 +37,11 @@ def verify_password(password: str, stored: str | None) -> bool:
   except (ValueError, TypeError):
     return False
   return hmac.compare_digest(digest, expected)
+
+
+def verify_secret(supplied: str | None, expected: str | None) -> bool:
+  """Constant-time comparison for manager secrets (e.g. the master key)."""
+
+  if not expected:
+    return False
+  return hmac.compare_digest(str(supplied or ''), str(expected))

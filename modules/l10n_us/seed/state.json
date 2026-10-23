@@ -1,0 +1,410 @@
+[
+  {
+    "_key": "l10n_us.sys_state_al",
+    "name": "Alabama",
+    "code": "AL",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ak",
+    "name": "Alaska",
+    "code": "AK",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_az",
+    "name": "Arizona",
+    "code": "AZ",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ar",
+    "name": "Arkansas",
+    "code": "AR",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ca",
+    "name": "California",
+    "code": "CA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_co",
+    "name": "Colorado",
+    "code": "CO",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ct",
+    "name": "Connecticut",
+    "code": "CT",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_de",
+    "name": "Delaware",
+    "code": "DE",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_fl",
+    "name": "Florida",
+    "code": "FL",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ga",
+    "name": "Georgia",
+    "code": "GA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_hi",
+    "name": "Hawaii",
+    "code": "HI",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_id",
+    "name": "Idaho",
+    "code": "ID",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_il",
+    "name": "Illinois",
+    "code": "IL",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_in",
+    "name": "Indiana",
+    "code": "IN",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ia",
+    "name": "Iowa",
+    "code": "IA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ks",
+    "name": "Kansas",
+    "code": "KS",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ky",
+    "name": "Kentucky",
+    "code": "KY",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_la",
+    "name": "Louisiana",
+    "code": "LA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_me",
+    "name": "Maine",
+    "code": "ME",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_md",
+    "name": "Maryland",
+    "code": "MD",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ma",
+    "name": "Massachusetts",
+    "code": "MA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_mi",
+    "name": "Michigan",
+    "code": "MI",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_mn",
+    "name": "Minnesota",
+    "code": "MN",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ms",
+    "name": "Mississippi",
+    "code": "MS",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_mo",
+    "name": "Missouri",
+    "code": "MO",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_mt",
+    "name": "Montana",
+    "code": "MT",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ne",
+    "name": "Nebraska",
+    "code": "NE",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nv",
+    "name": "Nevada",
+    "code": "NV",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nh",
+    "name": "New Hampshire",
+    "code": "NH",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nj",
+    "name": "New Jersey",
+    "code": "NJ",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nm",
+    "name": "New Mexico",
+    "code": "NM",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ny",
+    "name": "New York",
+    "code": "NY",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nc",
+    "name": "North Carolina",
+    "code": "NC",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_nd",
+    "name": "North Dakota",
+    "code": "ND",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_oh",
+    "name": "Ohio",
+    "code": "OH",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ok",
+    "name": "Oklahoma",
+    "code": "OK",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_or",
+    "name": "Oregon",
+    "code": "OR",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_pa",
+    "name": "Pennsylvania",
+    "code": "PA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ri",
+    "name": "Rhode Island",
+    "code": "RI",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_sc",
+    "name": "South Carolina",
+    "code": "SC",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_sd",
+    "name": "South Dakota",
+    "code": "SD",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_tn",
+    "name": "Tennessee",
+    "code": "TN",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_tx",
+    "name": "Texas",
+    "code": "TX",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_ut",
+    "name": "Utah",
+    "code": "UT",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_vt",
+    "name": "Vermont",
+    "code": "VT",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_va",
+    "name": "Virginia",
+    "code": "VA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_wa",
+    "name": "Washington",
+    "code": "WA",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_wv",
+    "name": "West Virginia",
+    "code": "WV",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_wi",
+    "name": "Wisconsin",
+    "code": "WI",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_wy",
+    "name": "Wyoming",
+    "code": "WY",
+    "country_id": {
+      "code": "US"
+    }
+  },
+  {
+    "_key": "l10n_us.sys_state_dc",
+    "name": "District of Columbia",
+    "code": "DC",
+    "country_id": {
+      "code": "US"
+    }
+  }
+]

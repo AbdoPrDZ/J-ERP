@@ -1,0 +1,26 @@
+{
+  "name": "sale",
+  "summary": "Sales orders and order lines",
+  "version": "1.0.0",
+  "depends": ["core", "stock"],
+  "routes": [
+    {
+      "label": "Sales",
+      "sequence": 25,
+      "children": [
+        {
+          "label": "Orders",
+          "view": "sale.orders",
+          "params": { "view": "list" },
+          "sequence": 1
+        },
+        {
+          "label": "Order Lines",
+          "view": "sale.order_lines",
+          "params": { "view": "list" },
+          "sequence": 2
+        }
+      ]
+    }
+  ]
+}

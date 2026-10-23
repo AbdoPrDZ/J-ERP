@@ -1,3 +1,4 @@
+from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
 
@@ -11,8 +12,21 @@ class AuthController(controller.Controller):
     username = str(payload.get('username') or '').strip()
     password = str(payload.get('password') or '')
 
-    # Imported here so the module loads without an active database.
-    from modules.core.models.user import User
+    environment = Environment.instance
+    if not environment.active_database:
+      return response.json(
+        {'error': 'no_database', 'message': 'No database is selected.'},
+        status=400,
+      )
+
+    registry = environment.registry()
+    registry.ensure_loaded()
+    User = registry.get('sys.user')
+    if User is None:
+      return response.json(
+        {'error': 'missing_model', 'message': 'The user model is not installed.'},
+        status=500,
+      )
 
     users = User.search([('username', '=', username)], limit=1) if username else []
     if not users or not users[0].check_password(password):

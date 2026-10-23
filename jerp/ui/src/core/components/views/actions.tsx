@@ -1,9 +1,9 @@
 import type { ActionDescriptor, RecordType } from '../../types';
 
 const STYLES: Record<string, string> = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700',
+  primary: 'bg-brand-blue text-white hover:bg-brand-blue-dark',
   danger: 'border border-red-200 text-red-600 hover:bg-red-50',
-  default: 'border border-slate-300 text-slate-700 hover:bg-slate-50',
+  default: 'border border-slate-300 text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5',
 };
 
 export function RecordActions({

@@ -8,14 +8,36 @@ export interface ListParams {
   offset?: number;
 }
 
+export interface DataClient {
+  all<T = Record<string, unknown>>(params?: ListParams): Promise<T[]>;
+  count(domain?: unknown[]): Promise<number>;
+  find<T = Record<string, unknown>>(
+    id: number | string,
+    fields?: string[],
+  ): Promise<T | null>;
+  create<T = Record<string, unknown>>(
+    values: Record<string, unknown>,
+  ): Promise<T>;
+  update<T = Record<string, unknown>>(
+    id: number | string,
+    values: Record<string, unknown>,
+  ): Promise<T>;
+  delete(id: number | string): Promise<boolean>;
+  deleteMany(ids: Array<number | string>): Promise<number>;
+  call<T = unknown>(
+    func: string,
+    params?: Record<string, unknown>,
+  ): Promise<T>;
+}
+
 /**
  * Typed client for a model's API endpoint.
  *
- *   model('product').all({ limit: 20 })
- *   model('product').create({ name: 'Widget' })
+ *   model('stock.product').all({ limit: 20 })
+ *   model('stock.product').create({ name: 'Widget' })
  *   model('module').install({ name: 'stock' })   // call any exposed method
  */
-export class ModelClient {
+export class ModelClient implements DataClient {
   constructor(private readonly name: string) {}
 
   /** Call any exposed method by name. */
@@ -60,6 +82,10 @@ export class ModelClient {
 
   delete(id: number | string): Promise<boolean> {
     return this.call<boolean>('delete', { id });
+  }
+
+  deleteMany(ids: Array<number | string>): Promise<number> {
+    return this.call<number>('delete_many', { ids });
   }
 }
 

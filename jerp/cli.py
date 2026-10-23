@@ -12,6 +12,7 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from jerp.config import Config
@@ -102,6 +103,38 @@ def cmd_modules(args) -> int:
   return 0
 
 
+def cmd_build(args) -> int:
+  manager = _manager(args)
+  name = _database(args)
+  registry = manager.registry(name)
+  registry.rebuild(force=args.force)
+
+  print(f'Built {len(registry.models)} model(s) for {name}:')
+  for model_name in sorted(registry.models):
+    detail = registry.describe(model_name) or {}
+    sources = ', '.join(detail.get('sources', []))
+    print(f'  {model_name:<20} <- {sources}')
+
+  if registry.build_result is not None:
+    changed = sorted(registry.build_result.changed)
+    if changed:
+      print(f'Rebuilt: {", ".join(changed)}')
+    else:
+      print('No model source changed.')
+  return 0
+
+
+def cmd_describe(args) -> int:
+  manager = _manager(args)
+  registry = manager.registry(_database(args)).load()
+  detail = registry.describe(args.model)
+  if detail is None:
+    print(f"Model '{args.model}' is not built in this database.")
+    return 1
+  print(json.dumps(detail, indent=2, default=str))
+  return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(prog='jerp', description='J-ERP manager')
   parser.add_argument('--config', help='Path to jerp.config.json')
@@ -137,6 +170,14 @@ def build_parser() -> argparse.ArgumentParser:
 
   p = sub.add_parser('modules', help='List installed modules')
   p.set_defaults(func=cmd_modules)
+
+  p = sub.add_parser('build', help='Rebuild and synchronize the database models')
+  p.add_argument('--force', action='store_true', help='Synchronize every model')
+  p.set_defaults(func=cmd_build)
+
+  p = sub.add_parser('describe', help='Show how a built model was composed')
+  p.add_argument('model')
+  p.set_defaults(func=cmd_describe)
 
   return parser
 

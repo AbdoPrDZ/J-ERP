@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* J-ERP brand palette. */
+@theme {
+  --color-brand-navy: #0f172a;
+  --color-brand-navy-soft: #1e293b;
+  --color-brand-blue: #2563eb;
+  --color-brand-blue-dark: #1d4ed8;
+  --color-brand-cyan: #22d3ee;
+  --color-brand-cyan-dark: #06b6d4;
+  --color-brand-white: #f8fafc;
+}
+
 /* The build uses `public/` as the Vite root, so Tailwind's automatic source
    detection only sees public/. Point it at the real sources explicitly (paths
    are relative to this stylesheet). */

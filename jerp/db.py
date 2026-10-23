@@ -17,6 +17,26 @@ from psycopg_pool import ConnectionPool
 from jerp.config import Config
 from jerp.dialect import PostgresDialect, quote_ident, quote_table
 
+#: PostgreSQL identifiers are limited to NAMEDATALEN - 1 bytes.
+MAX_DATABASE_NAME_BYTES = 63
+
+
+def is_valid_database_name(name: str) -> bool:
+  """Whether ``name`` can be used as a quoted PostgreSQL database name.
+
+  PostgreSQL supports mixed case, spaces and most printable characters in a
+  quoted identifier. We only reject empty/whitespace-only names, NUL/control
+  characters, and names longer than 63 bytes.
+  """
+
+  if not isinstance(name, str) or not name.strip():
+    return False
+  if '\x00' in name:
+    return False
+  if any(ord(char) < 32 or ord(char) == 127 for char in name):
+    return False
+  return len(name.encode('utf-8')) <= MAX_DATABASE_NAME_BYTES
+
 
 class Database:
   """A single PostgreSQL database plus its connection pool."""
@@ -198,7 +218,9 @@ class DatabaseManager:
     return name
 
   def drop(self, name: str) -> None:
-    self._databases.pop(name, None)
+    database = self._databases.pop(name, None)
+    if database is not None:
+      database.close()
     self._registries.pop(name, None)
     with self._admin_connection() as conn:
       with conn.cursor() as cur:

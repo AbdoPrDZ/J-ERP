@@ -12,7 +12,7 @@ export function CardsView({ view, records, onAction, busy }: StandardViewProps) 
           key={String(record.id ?? index)}
           className="flex flex-col rounded-lg border border-slate-200 bg-white p-5"
         >
-          <h3 className="font-medium text-slate-800">
+          <h3 className="font-medium text-brand-navy">
             {titleField ? formatValue(record[titleField.name]) : ''}
           </h3>
           <dl className="mt-2 flex-1 space-y-1 text-sm">

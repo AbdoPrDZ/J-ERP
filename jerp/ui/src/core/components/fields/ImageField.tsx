@@ -11,7 +11,7 @@ interface Confirmed {
   path: string;
 }
 
-/** Like FileField, but shows an image preview (stored files are served at /file/…). */
+/** Like FileField, but shows an image preview (stored files are served at /__storage/…). */
 export function ImageField({ value, onChange, readonly }: FieldProps) {
   const [name, setName] = React.useState<string | null>(null);
   const [path, setPath] = React.useState<string | null>(null);
@@ -28,7 +28,7 @@ export function ImageField({ value, onChange, readonly }: FieldProps) {
     let cancelled = false;
     void (async () => {
       try {
-        const record = await model('file').find<{ name: string; path: string }>(
+        const record = await model('sys.file').find<{ name: string; path: string }>(
           value as number,
         );
         if (!cancelled && record) {

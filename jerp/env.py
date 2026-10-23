@@ -58,6 +58,34 @@ class Environment(metaclass=_EnvironmentMeta):
   def registry(self, name: str | None = None):
     return self.databases.registry(name or self.active_database)
 
+  def ref(self, key: str):
+    """Return the record referenced by an external key (``sys.data.key``)."""
+
+    registry = self.registry()
+    registry.ensure_loaded()
+
+    Data = registry.get('sys.data')
+    if Data is None:
+      raise RuntimeError("The 'sys.data' model is not installed.")
+
+    rows = Data.search([('key', '=', str(key))], limit=1)
+    if not rows:
+      raise ValueError(f"External ID not found: {key}")
+
+    data = rows[0]
+    Model = registry.get(data.model)
+    if Model is None:
+      raise ValueError(
+        f"External ID '{key}' points to an unknown model '{data.model}'."
+      )
+
+    records = Model.browse(data.res_id)
+    if not records:
+      raise ValueError(
+        f"External ID '{key}' points to a missing {data.model}#{data.res_id}."
+      )
+    return records[0]
+
   @contextmanager
   def using(self, name: str):
     """Temporarily switch the active database."""

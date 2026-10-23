@@ -10,6 +10,7 @@ from __future__ import annotations
 import json as _json
 from contextlib import contextmanager
 from contextvars import ContextVar
+from urllib.parse import unquote
 
 
 class Request:
@@ -33,9 +34,16 @@ class Request:
     self.body = body
 
   def database(self) -> str | None:
-    """Resolve the requested database name, or ``None`` for the default."""
+    """Resolve the requested database name, or ``None`` for the default.
 
-    return self.cookies.get(self.DB_COOKIE) or self.headers.get(self.DB_HEADER)
+    The ``jerp_db`` cookie is percent-encoded so names may contain spaces and
+    other non-cookie characters; the raw name is returned here.
+    """
+
+    cookie = self.cookies.get(self.DB_COOKIE)
+    if cookie is not None:
+      return unquote(cookie)
+    return self.headers.get(self.DB_HEADER)
 
   def json(self) -> dict:
     """Parse the request body as JSON (empty dict on failure)."""

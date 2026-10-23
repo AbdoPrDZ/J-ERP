@@ -1,0 +1,10 @@
+{
+  "name": "l10n_dz",
+  "summary": "Algeria localization: country and 69 wilayas",
+  "version": "1.0.0",
+  "depends": ["core"],
+  "seed": {
+    "sys.country": { "file": "seed/country.json", "key": ["code"] },
+    "sys.state": { "file": "seed/state.json", "key": ["country_id", "code"] }
+  }
+}

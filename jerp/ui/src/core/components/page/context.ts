@@ -24,6 +24,8 @@ export interface PageConfig {
   delete: boolean;
   /** Clicking a row/card opens the record in the form view. */
   open: boolean;
+  /** Render model fields not explicitly declared in the view. */
+  autoFields: boolean;
   setView: (view: string) => void;
 }
 
@@ -35,3 +37,19 @@ export function usePage(): PageConfig | null {
 
 /** The record currently selected in a table/cards, provided to custom content. */
 export const RecordContext = createContext<Record<string, unknown> | null>(null);
+
+/** The current form's model, record and values, used by form-embedded views. */
+export interface FormContextValue {
+  model?: string;
+  recordId?: number | string | null;
+  values: Record<string, unknown>;
+  refresh: () => void;
+  registerCommit?: (
+    handler: (recordId: number | string) => Promise<void>,
+  ) => () => void;
+}
+
+export const FormContext = createContext<FormContextValue | null>(null);
+
+/** True when a table/cards view is rendered inside a form tab. */
+export const FormTabContext = createContext(false);

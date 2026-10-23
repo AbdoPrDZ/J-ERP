@@ -4,25 +4,28 @@ HASH_PREFIX = 'pbkdf2_sha256$'
 
 
 class User(models.Model):
-  _table = 'users'
+  _name = 'sys.user'
 
   #: ``name`` is the display name; ``username`` is used to log in.
   name = fields.StringField(
     name='Name',
     required=True,
+    help='Display name shown in the application.',
   )
   username = fields.StringField(
     name='Username',
-    index=True,
     unique=True,
+    help='Login name. Must be unique.',
   )
   password = fields.PasswordField(
     name='Password',
     required=True,
     hide=True,
+    help='Stored as a PBKDF2 hash and never returned by the API.',
   )
   image = fields.ImageField(
     name='Avatar',
+    help='Profile image for this user.',
   )
 
   @staticmethod

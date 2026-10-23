@@ -92,10 +92,53 @@ class SchemaSyncer:
   # --- table update -------------------------------------------------------
 
   def _sync_table(self, cur, model) -> None:
-    if not self._table_exists(cur, model._table):
+    legacy = self._legacy_table(cur, model)
+    new_exists = self._table_exists(cur, model._table)
+
+    if legacy and legacy != model._table and self._table_exists(cur, legacy):
+      if new_exists:
+        raise ValueError(
+          f"Both legacy table '{legacy}' and new table '{model._table}' "
+          f"exist for model '{model._name}'. Rename or drop one before syncing."
+        )
+      self._rename_legacy_table(cur, legacy, model._table)
+      new_exists = True
+
+    if not new_exists:
       self._create_table(cur, model)
       return
     self._update_table(cur, model)
+
+  def _legacy_table(self, cur, model) -> str | None:
+    """The previously recorded table name, if it differs from the new one."""
+
+    legacy_name = getattr(model, '_rename_from', None) or model._name
+    if not legacy_name or not self._table_exists(cur, 'sys_model'):
+      return None
+
+    cur.execute(
+      'SELECT table_name FROM sys_model WHERE name = %s',
+      [legacy_name],
+    )
+    row = cur.fetchone()
+    if not row:
+      return None
+
+    table_name = row['table_name']
+    if not table_name or table_name == model._table:
+      return None
+    return table_name
+
+  def _rename_legacy_table(self, cur, old_table: str, new_table: str) -> None:
+    cur.execute(self.dialect.rename_table_sql(old_table, new_table))
+
+    # Keep managed index names aligned with the new table name.
+    old_prefix = f'{old_table}_'
+    for index_name in self._indexes(cur, new_table):
+      if not (index_name.startswith(old_prefix) and index_name.endswith('_idx')):
+        continue
+      new_index = f'{new_table}_' + index_name[len(old_prefix):]
+      cur.execute(self.dialect.rename_index_sql(index_name, new_index))
 
   def _update_table(self, cur, model) -> None:
     columns = self._columns(cur, model._table)
@@ -139,11 +182,34 @@ class SchemaSyncer:
     for name, field in declared.items():
       if field.column_name in columns:
         continue
+
+      default = field.sql_default()
       cur.execute(self.dialect.add_column_sql(model._table, field))
-      if field.sql_default() is not None:
+
+      if default is not None:
         cur.execute(self.dialect.set_default_sql(model._table, field))
+
       if not field.nullable():
+        if default is not None:
+          # SET DEFAULT does not backfill existing rows; do it before NOT NULL.
+          cur.execute(
+            f'UPDATE {quote_table(model._table)} '
+            f'SET {quote_ident(field.column_name)} = DEFAULT '
+            f'WHERE {quote_ident(field.column_name)} IS NULL'
+          )
+        elif self._table_has_rows(cur, model._table):
+          raise ValueError(
+            f"Cannot add required field '{name}' to non-empty table "
+            f"'{model._table}' without a static default. Add default=... "
+            f"to the field or set required=False."
+          )
+
         cur.execute(self.dialect.set_not_null_sql(model._table, field, True))
+
+  @staticmethod
+  def _table_has_rows(cur, table: str) -> bool:
+    cur.execute(f'SELECT 1 FROM {quote_table(table)} LIMIT 1')
+    return cur.fetchone() is not None
 
   def _apply_type_changes(self, cur, model, declared, columns) -> None:
     for name, field in declared.items():
@@ -216,14 +282,44 @@ class SchemaSyncer:
     )
 
     if not self._table_exists(cur, 'sys_field'):
+      self._delete_legacy_metadata(cur, model)
       return
 
-    cur.execute('DELETE FROM sys_field WHERE model = %s', [model._name])
+    cur.execute(
+      'SELECT id, field_name FROM sys_field WHERE model = %s',
+      [model._name],
+    )
+    existing_fields = {
+      row['field_name']: row['id'] for row in cur.fetchall()
+    }
+
     for name, field in model._fields.items():
       label = field.name or name
-      cur.execute(
-        'INSERT INTO sys_field '
-        '(model, field_name, column_name, ttype, label, created_at, updated_at) '
-        'VALUES (%s, %s, %s, %s, %s, NOW(), NOW())',
-        [model._name, name, field.column_name, field.ttype, label],
-      )
+      if name in existing_fields:
+        cur.execute(
+          'UPDATE sys_field SET column_name = %s, ttype = %s, label = %s, '
+          'updated_at = NOW() WHERE id = %s',
+          [field.column_name, field.ttype, label, existing_fields.pop(name)],
+        )
+      else:
+        cur.execute(
+          'INSERT INTO sys_field '
+          '(model, field_name, column_name, ttype, label, created_at, updated_at) '
+          'VALUES (%s, %s, %s, %s, %s, NOW(), NOW())',
+          [model._name, name, field.column_name, field.ttype, label],
+        )
+
+    for field_id in existing_fields.values():
+      cur.execute('DELETE FROM sys_field WHERE id = %s', [field_id])
+
+    self._delete_legacy_metadata(cur, model)
+
+  def _delete_legacy_metadata(self, cur, model) -> None:
+    legacy = getattr(model, '_rename_from', None)
+    if not legacy or legacy == model._name:
+      return
+
+    if self._table_exists(cur, 'sys_field'):
+      cur.execute('DELETE FROM sys_field WHERE model = %s', [legacy])
+    if self._table_exists(cur, 'sys_model'):
+      cur.execute('DELETE FROM sys_model WHERE name = %s', [legacy])

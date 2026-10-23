@@ -1,0 +1,23 @@
+[
+  {
+    "_key": "core.sys_lang_en",
+    "name": "English",
+    "code": "en",
+    "active": true,
+    "is_default": true
+  },
+  {
+    "_key": "core.sys_lang_fr",
+    "name": "French",
+    "code": "fr",
+    "active": true,
+    "is_default": false
+  },
+  {
+    "_key": "core.sys_lang_ar",
+    "name": "Arabic",
+    "code": "ar",
+    "active": true,
+    "is_default": false
+  }
+]

@@ -4,6 +4,9 @@ node_modules/
 data/
 *.tsbuildinfo
 
+# Local configuration (copy jerp.config.json.example)
+jerp.config.json
+
 # Python
 __pycache__/
 *.py[cod]

@@ -3,13 +3,16 @@
     "host": "localhost",
     "port": 5432,
     "user": "jerp",
-    "password": "jerp",
+    "password": "your-db-password",
     "sslmode": "prefer",
     "owner": null
   },
   "app": {
     "host": "127.0.0.1",
     "port": 1347
+  },
+  "security": {
+    "master_key": "your-master-key"
   },
   "modules_path": "modules",
   "schema": "public",

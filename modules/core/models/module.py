@@ -8,35 +8,77 @@ class SysModule(Model):
   """Installed modules and their versions, per database."""
 
   _name = 'sys.module'
-  _table = 'sys_module'
 
-  name = fields.StringField(name='Name', required=True, unique=True)
-  version = fields.StringField(name='Version')
-  state = fields.StringField(name='State', default='installed')
-  summary = fields.TextField(name='Summary')
+  name = fields.StringField(
+    name='Name',
+    required=True,
+    unique=True,
+    help='Technical module name.',
+  )
+  version = fields.StringField(
+    name='Version',
+    help='Installed module version.',
+  )
+  state = fields.SelectionField(
+    name='Status',
+    selection=[
+      ('installed', 'Installed'),
+      ('install_failed', 'Install Failed'),
+      ('not_installed', 'Not Installed'),
+    ],
+    help='Whether the module is installed in this database.',
+  )
+  summary = fields.TextField(
+    name='Summary',
+    help='Short description of the module.',
+  )
 
 
 class SysModel(Model):
   """Models that have been synchronized into this database."""
 
   _name = 'sys.model'
-  _table = 'sys_model'
 
-  name = fields.StringField(name='Model', required=True, unique=True)
-  table_name = fields.StringField(name='Table')
+  name = fields.StringField(
+    name='Model',
+    required=True,
+    unique=True,
+    help='Logical model name.',
+  )
+  table_name = fields.StringField(
+    name='Table',
+    help='Physical database table for this model.',
+  )
 
 
 class SysField(Model):
   """Field to column mapping, used for deterministic rename detection."""
 
   _name = 'sys.field'
-  _table = 'sys_field'
 
-  model = fields.StringField(name='Model', required=True, index=True)
-  field_name = fields.StringField(name='Field', required=True)
-  column_name = fields.StringField(name='Column', required=True)
-  ttype = fields.StringField(name='Type')
-  label = fields.StringField(name='Label')
+  model = fields.StringField(
+    name='Model',
+    required=True,
+    help='Model that owns this field.',
+  )
+  field_name = fields.StringField(
+    name='Field',
+    required=True,
+    help='Python field name on the model.',
+  )
+  column_name = fields.StringField(
+    name='Column',
+    required=True,
+    help='Physical database column name.',
+  )
+  ttype = fields.StringField(
+    name='Type',
+    help='Framework field type.',
+  )
+  label = fields.StringField(
+    name='Label',
+    help='Human-readable field label.',
+  )
 
 
 class Module(Model):
@@ -45,11 +87,20 @@ class Module(Model):
   _name = 'module'
   _virtual = True
 
-  name = fields.StringField(name='Name')
-  version = fields.StringField(name='Version')
-  state = fields.StringField(name='Status')
-  summary = fields.TextField(name='Description')
-  depends = fields.StringField(name='Depends')
+  name = fields.StringField(name='Name', help='Module technical name.')
+  version = fields.StringField(name='Version', help='Module version.')
+  state = fields.StringField(
+    name='Status',
+    help='Whether the module is installed in this database.',
+  )
+  summary = fields.TextField(
+    name='Description',
+    help='Short module description.',
+  )
+  depends = fields.StringField(
+    name='Depends',
+    help='Comma-separated modules this module depends on.',
+  )
 
   @classmethod
   def _records(cls) -> list[dict]:
@@ -89,9 +140,43 @@ class Module(Model):
     return records
 
   @classmethod
+  def _sorted_records(cls, order=None) -> list[dict]:
+    records = cls._records()
+    if not order:
+      return records
+
+    specs = (
+      [part.strip() for part in order.split(',') if part.strip()]
+      if isinstance(order, str)
+      else list(order)
+    )
+    for spec in reversed(specs):
+      tokens = spec.split()
+      if not tokens:
+        continue
+      name = tokens[0]
+      reverse = len(tokens) > 1 and tokens[1].lower() == 'desc'
+      records.sort(
+        key=lambda record: str(record.get(name, '') or ''),
+        reverse=reverse,
+      )
+    return records
+
+  @classmethod
   @api_expose
   def all(cls, domain=None, fields=None, order=None, limit=None, offset=None):
-    return cls._records()
+    records = cls._sorted_records(order)
+    start = int(offset) if offset else 0
+    if start:
+      records = records[start:]
+    if limit is not None:
+      records = records[:int(limit)]
+    return records
+
+  @classmethod
+  @api_expose
+  def count(cls, domain=None) -> int:
+    return len(cls._records())
 
   @classmethod
   @api_expose

@@ -17,7 +17,7 @@ export default function Profile() {
     let cancelled = false;
     void (async () => {
       try {
-        const users = await model('user').all<{ id: number }>({
+        const users = await model('sys.user').all<{ id: number }>({
           domain: [['username', '=', username]],
           limit: 1,
         });
@@ -34,13 +34,22 @@ export default function Profile() {
   }, []);
 
   return (
-    <Page name="core.profile" title="Profile" model="user">
+    <Page
+      name="core.profile"
+      title="Profile"
+      model="sys.user"
+      searchBar={false}
+      create={false}
+      delete={false}
+      recordBreadcrumb={false}
+      views={['form']}
+    >
       <PageContent>
         {userId ? (
-          <Form model="user" title="Profile" recordId={userId}>
+          <Form model="sys.user" title="Profile" recordId={userId}>
             <FormGroup label="Profile">
-              <FormField name="name" label="Name" />
-              <FormField name="image" label="Avatar" />
+              <FormField name="name" />
+              <FormField name="image" />
             </FormGroup>
           </Form>
         ) : null}

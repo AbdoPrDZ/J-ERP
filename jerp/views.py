@@ -99,6 +99,7 @@ def _normalize(item: dict) -> dict:
     'auth': bool(item.get('auth', True)),
     'header': bool(item.get('header', True)),
     'menu': bool(item.get('menu', True)),
+    'drawer': bool(item.get('drawer', True)),
     'hide': bool(item.get('hide', False)),
   }
 
@@ -174,6 +175,15 @@ def view_auth(view_name: str) -> bool:
   return True
 
 
+def view_installed(view_name: str) -> bool:
+  """Whether the module that owns ``view_name`` is installed in the active DB."""
+
+  module = str(view_name or '').split('.', 1)[0]
+  if not module:
+    return False
+  return module in _installed_modules(_config())
+
+
 class ViewRenderer:
   def __init__(self, dist_dir: str | Path = 'data/ui'):
     self.dist_dir = Path(dist_dir)
@@ -232,18 +242,30 @@ def _config():
 
 
 def _installed_modules(config):
-  # Prefer the loaded registry (the real per-database module set); fall back to
-  # the modules discovered on disk when no database is selected/reachable.
+  """Modules installed in the active database.
+
+  The disk fallback is only for the "no database selected" phase (login,
+  database manager). Once a database is active, its registry is authoritative:
+  loading it lazily here prevents views from modules that are only present on
+  disk from appearing in the menu before their module is installed.
+  """
+
+  active = None
   try:
     from jerp.env import Environment
 
-    active = Environment.instance.active_database
+    environment = Environment.instance
+    active = environment.active_database
     if active:
-      registry = Environment.instance.databases.registry(active)
-      if registry.ready:
-        return registry.list_modules()
+      registry = environment.databases.registry(active)
+      if not registry.ready:
+        registry.load()
+      return registry.list_modules()
   except Exception:
-    pass
+    if active:
+      # A database is selected but its registry could not be loaded. Do not
+      # leak every module on disk into its menu/view map.
+      return []
 
   modules_dir = Path(config.modules_path)
   if not modules_dir.is_dir():
@@ -271,6 +293,7 @@ def render(view_key=None, context: dict | None = None) -> str:
       'auth': page['auth'],
       'header': page['header'],
       'menu': page['menu'],
+      'drawer': page['drawer'],
     }
     for page in pages
   }

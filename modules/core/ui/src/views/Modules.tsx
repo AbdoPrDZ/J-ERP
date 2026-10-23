@@ -5,6 +5,7 @@ import {
   Table,
   TableField,
   Cards,
+  CardField,
   Form,
   FormField,
   FormGroup,
@@ -34,28 +35,28 @@ export default function Modules() {
     >
       <PageContent>
         <Table model="module" emptyMessage="No modules found.">
-          <TableField name="name" label="Name" />
-          <TableField name="version" label="Version" />
-          <TableField name="state" label="Status" />
-          <TableField name="summary" label="Description" />
+          <TableField name="name" />
+          <TableField name="version" />
+          <TableField name="state" />
+          <TableField name="summary" />
         </Table>
 
         <Cards model="module" emptyMessage="No modules found.">
-          <ModuleLogo />
-          <TableField name="name" label="Name" />
-          <TableField name="state" label="Status" />
+          <CardField name="logo" />
+          <CardField name="name" />
+          <CardField name="state" widget="badge" badge_colors={{ installed: 'green', install_failed: 'red', not_installed: 'gray' }} />
         </Cards>
 
         <Form model="module" title="Module">
-          <ModuleLogo />
+          <FormField name="logo" />
           <FormGroup label="General">
-            <FormField name="name" label="Name" />
-            <FormField name="version" label="Version" />
-            <FormField name="state" label="Status" />
+            <FormField name="name" />
+            <FormField name="version" />
+            <FormField name="state" />
           </FormGroup>
           <FormGroup label="Details">
-            <FormField name="summary" label="Description" />
-            <FormField name="depends" label="Depends on" />
+            <FormField name="summary" />
+            <FormField name="depends" />
           </FormGroup>
         </Form>
       </PageContent>

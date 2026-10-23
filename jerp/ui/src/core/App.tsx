@@ -25,6 +25,7 @@ interface PageMeta {
   auth?: boolean;
   header?: boolean;
   menu?: boolean;
+  drawer?: boolean;
 }
 
 /** Drop auth-required items when logged out; drop groups left empty. */
@@ -67,29 +68,48 @@ function rootHref(item: MenuItem): string | undefined {
   return item.href ?? item.children?.[0]?.href;
 }
 
-function MenuEntry({ item }: { item: MenuItem }) {
+function MenuEntry({
+  item,
+  surface = 'dark',
+  active = false,
+}: {
+  item: MenuItem;
+  surface?: 'dark' | 'light';
+  active?: boolean;
+}) {
+  const itemClass =
+    surface === 'dark'
+      ? `block rounded px-3 py-1 ${
+          active
+            ? 'bg-white/10 font-medium text-brand-cyan'
+            : 'text-white/80 hover:bg-white/10 hover:text-white'
+        }`
+      : `block rounded px-3 py-1 ${
+          active
+            ? 'bg-brand-white font-medium text-brand-blue'
+            : 'text-slate-700 hover:bg-slate-100 hover:text-brand-navy'
+        }`;
+  const panelClass =
+    surface === 'dark'
+      ? 'absolute left-0 top-full z-20 hidden min-w-44 flex-col rounded-md border border-white/10 bg-brand-navy-soft py-1 shadow-lg group-hover:flex'
+      : 'absolute left-0 top-full z-20 hidden min-w-44 flex-col rounded-md border border-slate-200 bg-white py-1 shadow-lg group-hover:flex';
+
   if (item.children && item.children.length > 0) {
     return (
       <div className="group relative">
-        <button
-          type="button"
-          className="rounded px-3 py-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-        >
+        <button type="button" className={itemClass}>
           {item.label} ▾
         </button>
-        <div className="absolute left-0 top-full z-20 hidden min-w-44 flex-col rounded-md border border-slate-200 bg-white py-1 shadow-lg group-hover:flex">
+        <div className={panelClass}>
           {item.children.map((child) => (
-            <MenuEntry key={child.label} item={child} />
+            <MenuEntry key={child.label} item={child} surface={surface} />
           ))}
         </div>
       </div>
     );
   }
   return (
-    <a
-      href={item.href}
-      className="block rounded px-3 py-1 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-    >
+    <a href={item.href} className={itemClass}>
       {item.label}
     </a>
   );
@@ -106,15 +126,6 @@ function currentUsername(): string {
   return match ? decodeURIComponent(match[1]) : '';
 }
 
-/** A deterministic colour derived from the name (for the fallback avatar). */
-function avatarColor(name: string): string {
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = (hash * 31 + name.charCodeAt(index)) % 360;
-  }
-  return `hsl(${hash}, 60%, 45%)`;
-}
-
 function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => void }) {
   const [user, setUser] = React.useState<UserMenuUser | null>(null);
   const [path, setPath] = React.useState<string | null>(null);
@@ -127,7 +138,7 @@ function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => vo
     let cancelled = false;
     void (async () => {
       try {
-        const users = await model('user').all<UserMenuUser>({
+        const users = await model('sys.user').all<UserMenuUser>({
           domain: [['username', '=', userName]],
           limit: 1,
         });
@@ -137,7 +148,7 @@ function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => vo
         const record = users[0] ?? null;
         setUser(record);
         if (record?.image) {
-          const file = await model('file').find<{ path: string }>(record.image);
+          const file = await model('sys.file').find<{ path: string }>(record.image);
           if (!cancelled && file) {
             setPath(file.path);
           }
@@ -158,23 +169,20 @@ function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => vo
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 rounded px-2 py-1 hover:bg-slate-100"
+        className="flex items-center gap-2 rounded px-2 py-0.5 hover:bg-white/10"
       >
         {path ? (
           <img
             src={`/__storage/${path}`}
             alt={userName}
-            className="h-8 w-8 rounded-full object-cover"
+            className="h-7 w-7 rounded-full object-cover"
           />
         ) : (
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium text-white"
-            style={{ backgroundColor: avatarColor(userName) }}
-          >
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-cyan text-sm font-semibold text-brand-navy">
             {initial}
           </span>
         )}
-        <span className="text-sm text-slate-700">{userName}</span>
+        <span className="text-sm text-white/90">{userName}</span>
       </button>
 
       {open ? (
@@ -206,6 +214,7 @@ export function App({ viewKey, context, view: View }: AppProps) {
 
   const meta = pages[viewKey] ?? {};
   const showHeader = meta.header !== false;
+  const showDrawer = meta.drawer !== false;
 
   const userName = currentUsername();
   const roots = visibleMenus(menus, isLoggedIn());
@@ -223,20 +232,20 @@ export function App({ viewKey, context, view: View }: AppProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      {drawerOpen ? (
+    <div className="flex h-dvh flex-col overflow-hidden bg-brand-white text-brand-navy">
+      {showDrawer && drawerOpen ? (
         <div className="fixed inset-0 z-40 flex">
           <div
-            className="absolute inset-0 bg-slate-900/50"
+            className="absolute inset-0 bg-brand-navy/60"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="relative z-10 h-full w-64 overflow-y-auto bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <span className="text-lg font-semibold tracking-tight">J-ERP</span>
+          <aside className="relative z-10 h-full w-64 overflow-y-auto bg-gradient-to-b from-brand-navy to-brand-navy-soft text-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+              <span className="text-base font-semibold tracking-tight">J-ERP</span>
               <button
                 type="button"
                 onClick={() => setDrawerOpen(false)}
-                className="rounded px-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded px-2 text-white/60 hover:bg-white/10 hover:text-white"
               >
                 ✕
               </button>
@@ -247,10 +256,10 @@ export function App({ viewKey, context, view: View }: AppProps) {
                   key={item.label}
                   href={rootHref(item)}
                   onClick={() => setDrawerOpen(false)}
-                  className={`rounded px-3 py-2 text-sm ${
+                  className={`rounded px-3 py-1.5 text-sm ${
                     item === activeRoot
-                      ? 'bg-slate-100 font-medium text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50'
+                      ? 'border-l-2 border-brand-cyan bg-brand-blue font-medium text-white'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
                   }`}
                 >
                   {item.label}
@@ -262,20 +271,28 @@ export function App({ viewKey, context, view: View }: AppProps) {
       ) : null}
 
       {showHeader ? (
-        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-4 py-3">
-          <button
-            type="button"
-            aria-label="Menu"
-            onClick={() => setDrawerOpen(true)}
-            className="rounded px-2 py-1 text-lg leading-none text-slate-600 hover:bg-slate-100"
-          >
-            ☰
-          </button>
-          <span className="text-lg font-semibold tracking-tight">J-ERP</span>
+        <header
+          className="sticky top-0 z-30 flex flex-none flex-wrap items-center gap-x-3 gap-y-1.5 border-b-2 border-brand-cyan bg-gradient-to-r from-brand-navy via-brand-navy-soft to-brand-blue px-4 py-1.5 text-white shadow-md"
+        >
+          {showDrawer ? (
+            <button
+              type="button"
+              aria-label="Menu"
+              onClick={() => setDrawerOpen(true)}
+              className="rounded px-2 py-0.5 text-base leading-none text-white/80 hover:bg-white/10 hover:text-white"
+            >
+              ☰
+            </button>
+          ) : null}
+          <span className="text-base font-semibold tracking-tight">J-ERP</span>
           {headerItems.length > 0 ? (
             <nav className="flex flex-wrap items-center gap-1 text-sm">
               {headerItems.map((item) => (
-                <MenuEntry key={item.label} item={item} />
+                <MenuEntry
+                  key={item.label}
+                  item={item}
+                  active={isActive(item, current)}
+                />
               ))}
             </nav>
           ) : null}
@@ -283,8 +300,10 @@ export function App({ viewKey, context, view: View }: AppProps) {
         </header>
       ) : null}
 
-      <main className="mx-auto max-w-5xl p-6">
-        <View context={context} />
+      <main className="min-h-0 flex-1 overflow-hidden">
+        <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto px-4 py-3">
+          <View context={context} />
+        </div>
       </main>
     </div>
   );

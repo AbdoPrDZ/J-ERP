@@ -4,17 +4,30 @@
   "version": "1.0.0",
   "depends": [],
   "logo": "/__assets/core/logo.png",
+  "seed": {
+    "sys.lang": { "file": "seed/language.json", "key": ["code"] }
+  },
   "routes": [
     { "label": "Home", "view": "core.home", "endpoint": "/home", "sequence": 1 },
+    {
+      "label": "Contacts",
+      "sequence": 10,
+      "children": [
+        { "label": "Contacts", "view": "core.contacts", "params": { "view": "list" }, "sequence": 1 },
+        { "label": "Countries", "view": "core.countries", "params": { "view": "list" }, "sequence": 2 },
+        { "label": "States", "view": "core.states", "params": { "view": "list" }, "sequence": 3 }
+      ]
+    },
     {
       "label": "Configuration",
       "sequence": 20,
       "children": [
         { "label": "Modules", "view": "core.modules", "img": "/__assets/core/modules.png", "sequence": 1 },
-        { "label": "Users", "view": "core.users", "sequence": 2 }
+        { "label": "Users", "view": "core.users", "sequence": 2 },
+        { "label": "Languages", "view": "core.languages", "sequence": 3 }
       ]
     },
-    { "label": "Databases", "view": "core.db_manager", "endpoint": "/db/manager", "auth": false, "hide": true },
+    { "label": "Databases", "view": "core.db_manager", "endpoint": "/db/manager", "auth": false, "hide": true, "drawer": false },
     { "view": "core.login", "endpoint": "/login", "auth": false, "header": false }
   ]
 }

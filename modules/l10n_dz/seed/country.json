@@ -1,0 +1,12 @@
+[
+  {
+    "_key": "l10n_dz.sys_country_dz",
+    "name": {
+      "en": "Algeria",
+      "fr": "Algérie",
+      "ar": "الجزائر"
+    },
+    "code": "DZ",
+    "phone_code": "213"
+  }
+]

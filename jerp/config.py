@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from psycopg.conninfo import make_conninfo
+
 DEFAULT_CONFIG_NAME = 'jerp.config.json'
 
 
@@ -29,18 +31,18 @@ class DatabaseConfig:
     self.owner = os.environ.get('JERP_DB_OWNER', data.get('owner'))
 
   def dsn(self, database: str) -> str:
-    parts = [
-      f'host={self.host}',
-      f'port={self.port}',
-      f'user={self.user}',
-      f'dbname={database}',
-    ]
+    params = {
+      'host': self.host,
+      'port': str(self.port),
+      'user': self.user,
+      'dbname': database,
+      'connect_timeout': str(self.connect_timeout),
+    }
     if self.password:
-      parts.append(f'password={self.password}')
+      params['password'] = self.password
     if self.sslmode:
-      parts.append(f'sslmode={self.sslmode}')
-    parts.append(f'connect_timeout={self.connect_timeout}')
-    return ' '.join(parts)
+      params['sslmode'] = self.sslmode
+    return make_conninfo(**params)
 
 
 class Config:
@@ -53,6 +55,10 @@ class Config:
     app = data.get('app') or {}
     self.app_host = os.environ.get('JERP_APP_HOST', app.get('host', '127.0.0.1'))
     self.app_port = int(os.environ.get('JERP_APP_PORT', app.get('port', 1347)))
+    security = data.get('security') or {}
+    self.master_key = os.environ.get(
+      'JERP_MASTER_KEY', security.get('master_key', '')
+    )
     self.modules_path = data.get('modules_path', 'modules')
     self.schema = data.get('schema', 'public')
     self.ui_dist = data.get('ui_dist', 'data/ui')

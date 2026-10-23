@@ -12,7 +12,7 @@ export function TableView({ view, records, onAction, busy }: StandardViewProps) 
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500">
+          <tr className="border-b border-slate-200 bg-brand-white text-left text-slate-500">
             {columns.map((column) => (
               <th key={column.name} className="px-4 py-2 font-medium">
                 {column.label}

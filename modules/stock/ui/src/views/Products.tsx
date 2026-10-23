@@ -4,8 +4,10 @@ import {
   Table,
   TableField,
   Cards,
+  CardField,
   Form,
   FormField,
+  FormGroup,
 } from '@jerp/ui';
 
 export default function Products() {
@@ -13,7 +15,7 @@ export default function Products() {
     <Page
       name="stock.products"
       title="Products"
-      model="product"
+      model="stock.product"
       searchBar
       create
       update
@@ -21,17 +23,21 @@ export default function Products() {
       views={['list', 'cards']}
     >
       <PageContent>
-        <Table model="product" emptyMessage="No products found.">
-          <TableField name="name" label="Name" />
-          <TableField name="image" label="Image" />
+        <Table model="stock.product" emptyMessage="No products found.">
+          <TableField name="name" />
+          <TableField name="image" />
         </Table>
-        <Cards model="product" emptyMessage="No products found.">
-          <TableField name="name" label="Name" />
-          <TableField name="image" label="Image" />
+        <Cards model="stock.product" emptyMessage="No products found.">
+          <CardField name="name" />
+          <CardField name="image" />
         </Cards>
-        <Form model="product" title="Product">
-          <FormField name="name" label="Name" />
-          <FormField name="image" label="Image" />
+        <Form model="stock.product" title="Product">
+          <FormField name="name" />
+          <FormField name="image" />
+          <FormGroup label="Pricing">
+            <FormField name="standard_price" />
+            <FormField name="price" />
+          </FormGroup>
         </Form>
       </PageContent>
     </Page>

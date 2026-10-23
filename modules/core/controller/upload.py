@@ -3,12 +3,13 @@
 * ``POST /api/upload?name=<filename>`` (raw body = file bytes) -> stores in tmp,
   returns ``{token, name, mimetype, checksum, size}``.
 * ``POST /api/upload/confirm`` (``{token, name?, mimetype?, checksum?}``) -> moves
-  the file to ``files`` and creates a ``file`` record.
+  the file to ``files`` and creates a ``sys.file`` record.
 """
 
 from __future__ import annotations
 
 from jerp import uploads
+from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
 
@@ -47,7 +48,21 @@ class UploadController(controller.Controller):
         {'error': 'confirm_failed', 'message': str(exc)}, status=400
       )
 
-    from modules.core.models.file import File
+    environment = Environment.instance
+    if not environment.active_database:
+      return response.json(
+        {'error': 'no_database', 'message': 'No database is selected.'},
+        status=400,
+      )
+
+    registry = environment.registry()
+    registry.ensure_loaded()
+    File = registry.get('sys.file')
+    if File is None:
+      return response.json(
+        {'error': 'missing_model', 'message': 'The sys.file model is not installed.'},
+        status=500,
+      )
 
     record = File.create(
       name=str(payload.get('name') or token),

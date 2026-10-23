@@ -18,7 +18,7 @@ export interface BreadcrumbItem {
 /** Breadcrumb. Clicking an item goes back to it. */
 export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <nav className="flex flex-wrap items-center gap-1 text-lg">
+    <nav className="flex flex-wrap items-center gap-1 text-base">
       {items.map((item, index) => (
         <React.Fragment key={index}>
           {index > 0 ? <span className="text-slate-300">/</span> : null}
@@ -26,12 +26,12 @@ export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
             <button
               type="button"
               onClick={item.onClick}
-              className="rounded px-1 font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              className="rounded px-1 font-semibold text-slate-500 hover:bg-slate-100 hover:text-brand-navy"
             >
               {item.label}
             </button>
           ) : (
-            <span className="px-1 font-semibold text-slate-900">{item.label}</span>
+            <span className="px-1 font-semibold text-brand-navy">{item.label}</span>
           )}
         </React.Fragment>
       ))}
@@ -51,6 +51,8 @@ export interface PageProps {
   searchBar?: boolean;
   /** Show the Create button (default true). */
   create?: boolean;
+  /** Show the record name (or "New") after the page title in the path (default true). */
+  recordBreadcrumb?: boolean;
   /** Allow editing — the form is editable when true (default true). */
   update?: boolean;
   /** Show the Delete action (default true). */
@@ -59,6 +61,8 @@ export interface PageProps {
   open?: boolean;
   /** View types offered by the switcher (default ['list', 'cards']). */
   views?: string[];
+  /** Append model fields not explicitly declared (default true). */
+  autoFields?: boolean;
   children?: React.ReactNode;
 }
 
@@ -70,10 +74,12 @@ export function Page({
   labelField = 'name',
   searchBar = true,
   create = true,
+  recordBreadcrumb = true,
   update = true,
   delete: canDelete = true,
   open = true,
   views = ['list', 'cards'],
+  autoFields = true,
   children,
 }: PageProps) {
   const params = new URLSearchParams(window.location.search);
@@ -114,10 +120,11 @@ export function Page({
   const breadcrumb: BreadcrumbItem[] = [
     {
       label: title ?? name,
-      onClick: editing ? () => setView(views[0] ?? 'list') : undefined,
+      onClick:
+        editing && recordBreadcrumb ? () => setView(views[0] ?? 'list') : undefined,
     },
   ];
-  if (editing) {
+  if (editing && recordBreadcrumb) {
     breadcrumb.push({ label: recordLabel ?? (id ? `#${id}` : 'New') });
   }
 
@@ -133,22 +140,25 @@ export function Page({
     update,
     delete: canDelete,
     open,
+    autoFields,
     setView,
   };
 
   return (
     <PageContext.Provider value={config}>
-      <div className="space-y-6">
-        <PageHeader
-          title={title}
-          breadcrumb={breadcrumb}
-          searchBar={searchBar && !editing}
-          views={editing ? [] : views}
-          view={view}
-          onView={setView}
-          create={create && !editing}
-          onCreate={() => navigateTo({ view: 'form', id: undefined })}
-        />
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <div className="flex-none -mx-4 border-b border-slate-200/80 bg-brand-white px-4 py-2">
+          <PageHeader
+            title={title}
+            breadcrumb={breadcrumb}
+            searchBar={searchBar && !editing}
+            views={editing ? [] : views}
+            view={view}
+            onView={setView}
+            create={create && !editing}
+            onCreate={() => navigateTo({ view: 'form', id: undefined })}
+          />
+        </div>
         {children}
       </div>
     </PageContext.Provider>
@@ -180,56 +190,64 @@ export function PageHeader({
   children,
 }: PageHeaderProps) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      {breadcrumb && breadcrumb.length > 0 ? (
-        <Breadcrumb items={breadcrumb} />
-      ) : (
-        <h2 className="text-xl font-semibold">{title}</h2>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        {searchBar ? (
-          <input
-            type="search"
-            placeholder="Search…"
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
-          />
-        ) : null}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {breadcrumb && breadcrumb.length > 0 ? (
+          <Breadcrumb items={breadcrumb} />
+        ) : (
+          <h2 className="text-base font-semibold">{title}</h2>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {create ? (
+            <button
+              type="button"
+              onClick={onCreate}
+              className="rounded bg-brand-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-blue-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
+            >
+              Create
+            </button>
+          ) : null}
 
-        {views && views.length > 1 ? (
-          <div className="flex overflow-hidden rounded border border-slate-300">
-            {views.map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => onView?.(type)}
-                className={`px-3 py-1.5 text-sm ${
-                  type === view
-                    ? 'bg-slate-100 text-slate-900'
-                    : 'text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                {VIEW_LABELS[type] ?? type}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {create ? (
-          <button
-            type="button"
-            onClick={onCreate}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Create
-          </button>
-        ) : null}
-
-        {children}
+          {children}
+        </div>
       </div>
+
+      {searchBar || (views && views.length > 1) ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {searchBar ? (
+            <input
+              type="search"
+              placeholder="Search…"
+              className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
+            />
+          ) : null}
+
+          {views && views.length > 1 ? (
+            <div className="flex overflow-hidden rounded border border-slate-300">
+              {views.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => onView?.(type)}
+                  className={`px-3 py-1 text-sm ${
+                    type === view
+                      ? 'bg-brand-blue text-white'
+                      : 'text-slate-500 hover:bg-brand-white hover:text-brand-navy'
+                  }`}
+                >
+                  {VIEW_LABELS[type] ?? type}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export function PageContent({ children }: { children?: React.ReactNode }) {
-  return <div className="space-y-4">{children}</div>;
+  return (
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">{children}</div>
+  );
 }

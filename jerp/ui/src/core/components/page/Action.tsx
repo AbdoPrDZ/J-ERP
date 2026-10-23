@@ -23,7 +23,7 @@ export function Action({ children, open, onClose }: ActionProps) {
     return null;
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/60 p-4">
       <div className="w-full max-w-md overflow-hidden rounded-lg bg-white shadow-xl">
         <ActionContext.Provider value={{ close: onClose ?? (() => {}) }}>
           {children}
@@ -45,7 +45,7 @@ export function ActionHeader({ children }: { children?: React.ReactNode }) {
       <button
         type="button"
         onClick={() => action?.close()}
-        className="rounded px-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+        className="rounded px-2 text-slate-400 hover:bg-brand-cyan/10 hover:text-brand-blue"
       >
         ✕
       </button>

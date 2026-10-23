@@ -1,8 +1,8 @@
 """Module discovery and lifecycle (install / update / uninstall).
 
 Each directory under ``modules/`` that contains a ``configure.json`` manifest is
-a J-ERP module. Installing a module means synchronizing the tables of the models
-it declares and recording it in the per-database ``sys_module`` registry.
+a J-ERP module. The module manager records installation state; the registry's
+model builder and schema syncer apply the resulting model/schema changes.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ class ModuleInfo:
   depends: list
   path: Path
   logo: str | None = None
+  seed: dict = dataclass_field(default_factory=dict)
   models: list = dataclass_field(default_factory=list)
 
 
@@ -58,6 +59,7 @@ class ModuleManager:
         depends=list(data.get('depends', [])),
         path=path,
         logo=data.get('logo'),
+        seed=dict(data.get('seed') or {}),
       )
 
     for info in result.values():
@@ -76,7 +78,7 @@ class ModuleManager:
     prefix = f'{package}.'
     info.models = [
       model
-      for model in ModelRegistry.all().values()
+      for model in ModelRegistry.all_classes()
       if getattr(model, '__module__', '').startswith(prefix)
     ]
 
@@ -115,14 +117,14 @@ class ModuleManager:
   def install(self, name: str, force: bool = False) -> list[str]:
     modules = self.discover()
     order = self.resolve_order(modules, name)
-    syncer = SchemaSyncer(self.db)
+    self._validate_install(modules, order)
+    self._ensure_registry_tables(modules)
 
     for module_name in order:
       info = modules[module_name]
       existing = self.installed().get(module_name)
       if existing and existing['version'] == info.version and not force:
         continue
-      syncer.sync_models(info.models)
       self._record(info)
       self.build_views(module_name)
 
@@ -135,9 +137,9 @@ class ModuleManager:
     else:
       targets = list(self.installed().keys())
 
-    syncer = SchemaSyncer(self.db)
-    synced: list[str] = []
+    self._validate_install(modules, targets)
 
+    synced: list[str] = []
     for module_name in targets:
       info = modules.get(module_name)
       if info is None:
@@ -145,7 +147,6 @@ class ModuleManager:
       existing = self.installed().get(module_name)
       if existing and not force and existing['version'] == info.version:
         continue
-      syncer.sync_models(info.models)
       self._record(info)
       self.build_views(module_name)
       synced.append(module_name)
@@ -172,12 +173,103 @@ class ModuleManager:
         f"Cannot uninstall '{name}'; required by: {', '.join(dependents)}"
       )
 
+    # Extensions do not own their target's table: the registry rebuild after
+    # this returns synchronizes the reduced model and drops the added columns.
     syncer = SchemaSyncer(self.db)
     for model in reversed(info.models):
+      if getattr(model, '_is_extension', False):
+        continue
       syncer.drop_model(model)
 
     if self.db.table_exists('sys_module'):
       self.db.execute('DELETE FROM sys_module WHERE name = %s', [name])
+
+  # --- validation ---------------------------------------------------------
+
+  def _validate_install(self, modules: dict, order: list[str]) -> None:
+    owners: dict[str, str] = {}
+    for module_name, info in modules.items():
+      for model in info.models:
+        if not getattr(model, '_is_extension', False):
+          owners[model._name] = module_name
+
+    def closure(module_name: str) -> set[str]:
+      seen: set[str] = set()
+
+      def visit(current: str) -> None:
+        if current in seen:
+          return
+        seen.add(current)
+        info = modules.get(current)
+        if info is not None:
+          for dependency in info.depends:
+            visit(dependency)
+
+      visit(module_name)
+      return seen
+
+    for module_name in order:
+      info = modules.get(module_name)
+      if info is None:
+        continue
+      dependencies = closure(module_name)
+
+      for model in info.models:
+        if getattr(model, '_is_extension', False):
+          target = model._extends
+          owner = owners.get(target)
+          if owner is None:
+            raise ValueError(
+              f"Module '{module_name}': model '{model.__name__}' extends "
+              f"unknown model '{target}'."
+            )
+          self._require_dependency(
+            module_name, owner, dependencies, f"_inherit = '{target}'"
+          )
+
+        elif getattr(model, '_is_inherited', False):
+          for parent in model._inherits:
+            owner = owners.get(parent)
+            if owner is None:
+              raise ValueError(
+                f"Module '{module_name}': model '{model.__name__}' inherits "
+                f"unknown model '{parent}'."
+              )
+            self._require_dependency(
+              module_name, owner, dependencies, f"_inherits parent '{parent}'"
+            )
+
+  @staticmethod
+  def _require_dependency(
+    module_name: str, owner: str, dependencies: set[str], what: str
+  ) -> None:
+    if owner == module_name:
+      return
+    if owner not in dependencies:
+      raise ValueError(
+        f"Module '{module_name}' uses {what} from module '{owner}', but "
+        f"'{owner}' is not in its dependencies. Add \"{owner}\" to depends "
+        f"in modules/{module_name}/configure.json."
+      )
+
+  def _ensure_registry_tables(self, modules: dict) -> None:
+    """Create the system tables before the first module is recorded."""
+
+    if self.db.table_exists('sys_module'):
+      return
+
+    core = modules.get(BASE_MODULE)
+    if core is None:
+      raise ValueError(
+        f"Cannot install modules: the '{BASE_MODULE}' module is missing."
+      )
+    models = [
+      model
+      for model in core.models
+      if not getattr(model, '_is_extension', False)
+      and not getattr(model, '_is_inherited', False)
+    ]
+    SchemaSyncer(self.db).sync_models(models)
 
   # --- views --------------------------------------------------------------
 

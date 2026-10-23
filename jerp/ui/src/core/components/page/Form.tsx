@@ -1,10 +1,12 @@
 import * as React from 'react';
 
-import { model } from '../../model';
+import { model, type DataClient } from '../../model';
+import { FieldHelp } from '../fields/FieldHelp';
 import { fieldRegistry } from '../fields/registry';
-import { RecordContext, usePage } from './context';
+import { RecordContext, FormContext, FormTabContext, usePage } from './context';
+import { validateValues, type FormErrors } from './validation';
 import { Action, isAction, type ActionProps } from './Action';
-import type { FieldDescriptor } from '../../types';
+import { autoModelFields, useModelFields } from './useModelFields';
 
 export interface FormFieldProps {
   name: string;
@@ -35,13 +37,93 @@ export function isFormGroup(node: React.ReactNode): node is React.ReactElement<F
   return React.isValidElement(node) && node.type === FormGroup;
 }
 
-/** Flatten fields, descending into groups. */
+export interface FormTabProps {
+  label: string;
+  children?: React.ReactNode;
+}
+
+/** Declares a tab inside ``FormTabs``. Renders nothing on its own. */
+export function FormTab(_props: FormTabProps) {
+  return null;
+}
+
+export function isFormTab(node: React.ReactNode): node is React.ReactElement<FormTabProps> {
+  return React.isValidElement(node) && node.type === FormTab;
+}
+
+export interface FormTabsProps {
+  children?: React.ReactNode;
+}
+
+/** Declares a tabbed section. Rendered by Form. */
+export function FormTabs(_props: FormTabsProps) {
+  return null;
+}
+
+export function isFormTabs(node: React.ReactNode): node is React.ReactElement<FormTabsProps> {
+  return React.isValidElement(node) && node.type === FormTabs;
+}
+
+function FormTabsSection({
+  tabs,
+  renderNodes,
+}: {
+  tabs: React.ReactElement<FormTabProps>[];
+  renderNodes: (nodes: React.ReactNode) => React.ReactNode;
+}) {
+  const [active, setActive] = React.useState(0);
+  if (tabs.length === 0) {
+    return null;
+  }
+
+  const selected = Math.min(active, tabs.length - 1);
+  return (
+    <div className="md:col-span-2">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200" role="tablist">
+        {tabs.map((tab, index) => (
+          <button
+            key={index}
+            type="button"
+            role="tab"
+            aria-selected={index === selected}
+            onClick={() => setActive(index)}
+            className={`-mb-px rounded-t border-b-2 px-4 py-2 text-sm font-medium ${
+              index === selected
+                ? 'border-brand-blue text-brand-blue'
+                : 'border-transparent text-slate-500 hover:text-brand-navy'
+            }`}
+          >
+            {tab.props.label}
+          </button>
+        ))}
+      </div>
+      {tabs.map((tab, index) => (
+        <div
+          key={index}
+          className="grid grid-cols-1 gap-4 pt-4 md:grid-cols-2"
+          role="tabpanel"
+          hidden={index !== selected}
+        >
+          <FormTabContext.Provider value={true}>
+            {renderNodes(tab.props.children)}
+          </FormTabContext.Provider>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Flatten fields, descending into groups and tabs. */
 function collectFields(nodes: React.ReactNode): React.ReactElement<FormFieldProps>[] {
   const out: React.ReactElement<FormFieldProps>[] = [];
   for (const node of React.Children.toArray(nodes)) {
     if (isFormField(node)) {
       out.push(node);
     } else if (isFormGroup(node)) {
+      out.push(...collectFields(node.props.children));
+    } else if (isFormTabs(node)) {
+      out.push(...collectFields(node.props.children));
+    } else if (isFormTab(node)) {
       out.push(...collectFields(node.props.children));
     }
   }
@@ -92,6 +174,10 @@ export interface FormProps {
   title?: string;
   recordId?: number | string | null;
   readonly?: boolean;
+  /** Values applied when creating a new record (not used when editing). */
+  defaults?: Record<string, unknown>;
+  /** Optional data source; defaults to the model API. */
+  client?: DataClient;
   children?: React.ReactNode;
   onSaved?: () => void;
 }
@@ -106,6 +192,8 @@ export function Form({
   title,
   recordId: recordIdProp,
   readonly,
+  defaults,
+  client,
   children,
   onSaved,
 }: FormProps) {
@@ -118,12 +206,46 @@ export function Form({
 
   const fields = collectFields(children);
   const actions = React.Children.toArray(children).filter(isAction);
+  const schema = useModelFields(modelName);
+  const autoEnabled = page?.autoFields ?? true;
+  const autoFields = React.useMemo(
+    () =>
+      autoEnabled
+        ? autoModelFields(schema, new Set(fields.map((field) => field.props.name)))
+        : [],
+    [autoEnabled, schema, fields],
+  );
+  const types = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const descriptor of schema) {
+      map[descriptor.name] = descriptor.ttype;
+    }
+    return map;
+  }, [schema]);
 
   const [values, setValues] = React.useState<Record<string, unknown>>({});
-  const [types, setTypes] = React.useState<Record<string, string>>({});
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [errors, setErrors] = React.useState<FormErrors>({});
+  const [refreshToken, setRefreshToken] = React.useState(0);
   const [activeAction, setActiveAction] = React.useState<React.ReactElement<ActionProps> | null>(null);
+  const commitHandlers = React.useRef(
+    new Set<(recordId: number | string) => Promise<void>>(),
+  );
+
+  const refresh = React.useCallback(() => {
+    setRefreshToken((value) => value + 1);
+  }, []);
+
+  const registerCommit = React.useCallback(
+    (handler: (recordId: number | string) => Promise<void>) => {
+      commitHandlers.current.add(handler);
+      return () => {
+        commitHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
 
   React.useEffect(() => {
     if (!active || !modelName) {
@@ -132,39 +254,31 @@ export function Form({
     let cancelled = false;
 
     void (async () => {
-      try {
-        const schema = await model(modelName).call<FieldDescriptor[]>('fields');
-        if (!cancelled) {
-          const map: Record<string, string> = {};
-          for (const descriptor of schema) {
-            map[descriptor.name] = descriptor.ttype;
-          }
-          setTypes(map);
-        }
-      } catch {
-        // ignore: fall back to defaults
-      }
-
       if (editing) {
         try {
-          const record = await model(modelName).find<Record<string, unknown>>(
+          const source = client ?? model(modelName);
+          const record = await source.find<Record<string, unknown>>(
             recordId as number,
           );
           if (!cancelled) {
             setValues(record ?? {});
+            setErrors({});
+            setError(null);
           }
         } catch {
           // ignore
         }
       } else if (!cancelled) {
         setValues({});
+        setErrors({});
+        setError(null);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [active, modelName, recordId, editing]);
+  }, [active, modelName, recordId, editing, refreshToken, client]);
 
   if (!active) {
     return null;
@@ -184,6 +298,29 @@ export function Form({
     if (!modelName || busy) {
       return;
     }
+
+    const entries: Array<{ field: (typeof schema)[number]; value: unknown }> = [];
+    for (const formField of fields) {
+      const name = formField.props.name;
+      const descriptor =
+        schema.find((item) => item.name === name) ?? {
+          name,
+          label: formField.props.label ?? name,
+          ttype: formField.props.ttype ?? types[name] ?? 'char',
+        };
+      entries.push({ field: descriptor, value: values[name] });
+    }
+    for (const descriptor of autoFields) {
+      entries.push({ field: descriptor, value: values[descriptor.name] });
+    }
+    const nextErrors = validateValues(entries);
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      setError(null);
+      return;
+    }
+
+    setErrors({});
     setBusy(true);
     setError(null);
     try {
@@ -191,10 +328,26 @@ export function Form({
       for (const field of fields) {
         payload[field.props.name] = values[field.props.name];
       }
+      for (const field of autoFields) {
+        payload[field.name] = values[field.name];
+      }
+      const source = client ?? model(modelName);
       if (editing) {
-        await model(modelName).update(recordId as number, payload);
+        await source.update(recordId as number, payload);
+        for (const handler of Array.from(commitHandlers.current)) {
+          await handler(recordId as number | string);
+        }
       } else {
-        await model(modelName).create(payload);
+        const created = await source.create({
+          ...(defaults ?? {}),
+          ...payload,
+        });
+        const createdId = (created as { id?: number | string } | null)?.id;
+        if (createdId !== undefined && createdId !== null) {
+          for (const handler of Array.from(commitHandlers.current)) {
+            await handler(createdId);
+          }
+        }
       }
       saved();
     } catch (err) {
@@ -204,23 +357,56 @@ export function Form({
     }
   };
 
-  const renderField = (field: React.ReactElement<FormFieldProps>, key: React.Key) => {
-    const name = field.props.name;
-    const label = field.props.label ?? name;
-    const ttype = field.props.ttype ?? types[name] ?? 'char';
+  const updateValue = (name: string, value: unknown) => {
+    setValues((state) => ({ ...state, [name]: value }));
+    setErrors((current) => {
+      if (!current[name]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  };
+
+  const renderField = (
+    name: string,
+    labelProp: string | undefined,
+    ttype: string,
+    key: React.Key,
+    readonlyField = false,
+  ) => {
+    const descriptor = schema.find((item) => item.name === name);
+    const label = labelProp ?? descriptor?.label ?? name;
+    const readonly = isReadonly || readonlyField || Boolean(descriptor?.readonly);
     const Widget = fieldRegistry.get(ttype) ?? fieldRegistry.get('char');
+    const widgetField = {
+      ...(descriptor ?? { name, label, ttype }),
+      name,
+      label,
+      ttype,
+      readonly,
+    };
     return (
-      <label key={key} className="block">
-        <span className="mb-1 block text-sm font-medium text-slate-700">{label}</span>
+      <div key={key} className="block">
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="text-sm font-medium text-brand-navy">{label}</span>
+          {descriptor?.help ? <FieldHelp text={descriptor.help} /> : null}
+        </div>
         {Widget ? (
           <Widget
-            field={{ name, label, ttype, readonly: isReadonly }}
+            field={widgetField}
             value={values[name]}
-            readonly={isReadonly}
-            onChange={(value) => setValues((state) => ({ ...state, [name]: value }))}
+            readonly={readonly}
+            model={modelName}
+            recordId={recordId}
+            onChange={(value) => updateValue(name, value)}
           />
         ) : null}
-      </label>
+        {errors[name] ? (
+          <p className="mt-1 text-xs text-red-600">{errors[name]}</p>
+        ) : null}
+      </div>
     );
   };
 
@@ -230,7 +416,13 @@ export function Form({
         return null; // actions are shown in the ⋯ menu
       }
       if (isFormField(node)) {
-        return renderField(node, index);
+        const name = node.props.name;
+        return renderField(
+          name,
+          node.props.label,
+          node.props.ttype ?? types[name] ?? 'char',
+          index,
+        );
       }
       if (isFormGroup(node)) {
         return (
@@ -239,7 +431,7 @@ export function Form({
             className="rounded-lg border border-slate-200 p-4 md:col-span-2"
           >
             {node.props.label ? (
-              <legend className="px-1 text-sm font-medium text-slate-600">
+              <legend className="px-1 text-sm font-medium text-brand-navy">
                 {node.props.label}
               </legend>
             ) : null}
@@ -247,6 +439,12 @@ export function Form({
               {renderNodes(node.props.children)}
             </div>
           </fieldset>
+        );
+      }
+      if (isFormTabs(node)) {
+        const tabs = React.Children.toArray(node.props.children).filter(isFormTab);
+        return (
+          <FormTabsSection key={index} tabs={tabs} renderNodes={renderNodes} />
         );
       }
       return (
@@ -257,8 +455,11 @@ export function Form({
     });
 
   return (
-    <RecordContext.Provider value={values}>
-      <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
+    <FormContext.Provider
+      value={{ model: modelName, recordId, values, refresh, registerCommit }}
+    >
+      <RecordContext.Provider value={values}>
+        <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between gap-3">
           {title ? <h3 className="text-base font-semibold">{title}</h3> : <span />}
           <div className="flex items-center gap-2">
@@ -268,7 +469,7 @@ export function Form({
             {!isReadonly ? (
               <button
                 type="button"
-                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+                className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
                 disabled={busy}
                 onClick={() => void submit()}
               >
@@ -284,8 +485,36 @@ export function Form({
           </div>
         ) : null}
 
+        {Object.keys(errors).length > 0 ? (
+          <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <ul className="list-disc space-y-1 pl-4">
+              {Object.values(errors).map((message, index) => (
+                <li key={index}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {renderNodes(children)}
+          {autoFields.length > 0 ? (
+            <fieldset className="rounded-lg border border-slate-200 p-4 md:col-span-2">
+              <legend className="px-1 text-sm font-medium text-brand-navy">
+                Additional fields
+              </legend>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {autoFields.map((field, index) =>
+                  renderField(
+                    field.name,
+                    field.label ?? field.name,
+                    field.ttype,
+                    `auto-${index}`,
+                    Boolean(field.readonly),
+                  ),
+                )}
+              </div>
+            </fieldset>
+          ) : null}
         </div>
       </div>
 
@@ -295,6 +524,7 @@ export function Form({
             onClose: () => setActiveAction(null),
           })
         : null}
-    </RecordContext.Provider>
+      </RecordContext.Provider>
+    </FormContext.Provider>
   );
 }

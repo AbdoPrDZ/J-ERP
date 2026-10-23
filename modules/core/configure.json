@@ -1,0 +1,20 @@
+{
+  "name": "core",
+  "summary": "Core module: system tables, registry and the entrypoint (home) controller.",
+  "version": "1.0.0",
+  "depends": [],
+  "logo": "/__assets/core/logo.png",
+  "routes": [
+    { "label": "Home", "view": "core.home", "endpoint": "/home", "sequence": 1 },
+    {
+      "label": "Configuration",
+      "sequence": 20,
+      "children": [
+        { "label": "Modules", "view": "core.modules", "img": "/__assets/core/modules.png", "sequence": 1 },
+        { "label": "Users", "view": "core.users", "sequence": 2 }
+      ]
+    },
+    { "label": "Databases", "view": "core.db_manager", "endpoint": "/db/manager", "auth": false, "hide": true },
+    { "view": "core.login", "endpoint": "/login", "auth": false, "header": false }
+  ]
+}

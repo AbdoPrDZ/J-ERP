@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* The build uses `public/` as the Vite root, so Tailwind's automatic source
+   detection only sees public/. Point it at the real sources explicitly (paths
+   are relative to this stylesheet). */
+@source "../../../jerp/ui/src";
+@source "../../../modules";
+
+/* Tailwind v4 preflight gives buttons `cursor: default`; restore the pointer. */
+button:not(:disabled) {
+  cursor: pointer;
+}

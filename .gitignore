@@ -1,0 +1,10 @@
+# Node / frontend build
+# Node / frontend build + runtime data (uploads)
+node_modules/
+data/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/

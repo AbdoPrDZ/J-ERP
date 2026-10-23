@@ -1,0 +1,11 @@
+# J-ERP runtime dependencies
+# Python 3.15
+
+# PostgreSQL driver (Postgres-only backend).
+psycopg[binary]==3.3.6
+
+# Connection pooling for psycopg 3.
+psycopg-pool==3.3.3
+
+# Timezone database used by psycopg for tz-aware timestamps.
+tzdata==2026.5

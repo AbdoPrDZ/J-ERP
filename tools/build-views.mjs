@@ -1,0 +1,118 @@
+/**
+ * Build module view bundles.
+ *
+ * Each module's `ui/src/views/*.tsx` is compiled to ESM in `cache/view/<m>/`,
+ * with React and the J-ERP UI kit left external (resolved at runtime by the
+ * import map). `cache/view/<m>/manifest.json` maps view keys to their files.
+ *
+ * Output goes to the cache (not the source tree) and is only rebuilt when a
+ * module is installed/updated.
+ *
+ * Usage:
+ *   node tools/build-views.mjs            # all modules
+ *   node tools/build-views.mjs core stock # selected modules
+ */
+
+import { build } from 'esbuild';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const EXTERNAL = [
+  'react',
+  'react-dom',
+  'react-dom/client',
+  'react/jsx-runtime',
+  '@jerp/ui',
+];
+
+const modulesDir = path.resolve('modules');
+
+function toSnake(name) {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase();
+}
+
+function listModuleDirs(filter) {
+  if (!fs.existsSync(modulesDir)) {
+    return [];
+  }
+  return fs
+    .readdirSync(modulesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => !filter.length || filter.includes(name))
+    .filter((name) => fs.existsSync(path.join(modulesDir, name, 'configure.json')));
+}
+
+function viewFiles(viewsDir) {
+  if (!fs.existsSync(viewsDir)) {
+    return [];
+  }
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) {
+        found.push(full);
+      }
+    }
+  };
+  walk(viewsDir);
+  return found;
+}
+
+const filter = process.argv.slice(2);
+let built = 0;
+
+for (const moduleName of listModuleDirs(filter)) {
+  const moduleRoot = path.join(modulesDir, moduleName);
+  const viewsDir = path.join(moduleRoot, 'ui', 'src', 'views');
+  const outDir = path.resolve('data', 'view', moduleName);
+  const entryPoints = viewFiles(viewsDir);
+
+  if (!entryPoints.length) {
+    continue;
+  }
+
+  fs.mkdirSync(outDir, { recursive: true });
+
+  await build({
+    entryPoints,
+    outdir: outDir,
+    outbase: viewsDir,
+    bundle: true,
+    format: 'esm',
+    target: 'es2022',
+    jsx: 'automatic',
+    sourcemap: true,
+    external: EXTERNAL,
+    logLevel: 'warning',
+  });
+
+  const manifest = { module: moduleName, views: {} };
+  for (const entry of entryPoints) {
+    const rel = path.relative(viewsDir, entry);
+    const base = rel.replace(/\.(tsx|ts)$/, '');
+    const key = `${moduleName}.${toSnake(path.basename(base))}`;
+    const out = `${base.split(path.sep).join('/')}.js`;
+    manifest.views[key] = out;
+  }
+
+  fs.writeFileSync(
+    path.join(outDir, 'manifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+
+  built += 1;
+  console.log(
+    `built ${moduleName} -> data/view/${moduleName}: ${Object.keys(manifest.views).join(', ')}`,
+  );
+}
+
+if (!built) {
+  console.log('no module views to build');
+}

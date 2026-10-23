@@ -1,0 +1,19 @@
+{
+  "databases": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "jerp",
+    "password": "jerp",
+    "sslmode": "prefer",
+    "owner": null
+  },
+  "app": {
+    "host": "127.0.0.1",
+    "port": 1347
+  },
+  "modules_path": "modules",
+  "schema": "public",
+  "ui_dist": "data/ui",
+  "views_dir": "data/view",
+  "uploads_dir": "data/uploads"
+}

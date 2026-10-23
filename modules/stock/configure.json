@@ -1,0 +1,15 @@
+{
+  "name": "stock",
+  "summary": "Stock management module for J-ERP",
+  "version": "1.0.0",
+  "depends": ["core"],
+  "routes": [
+    {
+      "label": "Stock",
+      "sequence": 30,
+      "children": [
+        { "label": "Products", "view": "stock.products", "params": { "view": "list" }, "sequence": 1 }
+      ]
+    }
+  ]
+}

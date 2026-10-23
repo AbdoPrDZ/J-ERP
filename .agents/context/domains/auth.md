@@ -8,7 +8,7 @@ core is installed.
 
 ## Important Entities
 
-- `modules/core/models/user.py` → model `user`, table `users`
+- `modules/core/models/user.py` → model `sys.user`, table `sys_user`
   - `name` (display name), `username` (login, unique + indexed),
     `password` (hidden, PBKDF2 hash), `image` (file reference).
 - `jerp.security` → PBKDF2-SHA256 hashing (`pbkdf2_sha256$<iters>$<salt>$<hash>`)
@@ -19,7 +19,7 @@ core is installed.
 ### Login
 
 1. Client posts `{username, password}` to `/api/login`.
-2. `AuthController` searches `user` by username in the **active database**.
+2. `AuthController` searches `sys.user` by username in the **active database**.
 3. `check_password` verifies the PBKDF2 hash; failure returns 401
    `invalid_credentials`.
 4. Success sets `jerp_user=<username>` (path `/`, `SameSite=Lax`) and returns

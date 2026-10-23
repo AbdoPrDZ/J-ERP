@@ -11,23 +11,35 @@
     { "label": "Home", "view": "core.home", "endpoint": "/home", "sequence": 1 },
     {
       "label": "Contacts",
-      "sequence": 10,
+      "sequence": 20,
       "children": [
-        { "label": "Contacts", "view": "core.contacts", "params": { "view": "list" }, "sequence": 1 },
+        { "label": "Contacts", "view": "core.contacts", "params": { "view": "list" }, "sequence": 1, "add_to_home": true, "description": "People, addresses and countries." },
         { "label": "Countries", "view": "core.countries", "params": { "view": "list" }, "sequence": 2 },
         { "label": "States", "view": "core.states", "params": { "view": "list" }, "sequence": 3 }
       ]
     },
     {
       "label": "Configuration",
-      "sequence": 20,
+      "sequence": 90,
       "children": [
-        { "label": "Modules", "view": "core.modules", "img": "/__assets/core/modules.png", "sequence": 1 },
+        { "label": "Modules", "view": "core.modules", "img": "/__assets/core/modules.png", "sequence": 1, "add_to_home": true, "description": "Install, update and remove modules." },
         { "label": "Users", "view": "core.users", "sequence": 2 },
-        { "label": "Languages", "view": "core.languages", "sequence": 3 }
+        { "label": "Languages", "view": "core.languages", "sequence": 3 },
+        {
+          "label": "Technical Settings",
+          "sequence": 4,
+          "add_to_home": true,
+          "description": "Models, fields, menus and external data.",
+          "children": [
+            { "label": "Models", "view": "core.models", "sequence": 1 },
+            { "label": "Fields", "view": "core.fields", "sequence": 2 },
+            { "label": "Menus", "view": "core.menus", "sequence": 3 },
+            { "label": "Data", "view": "core.data", "sequence": 3 }
+          ]
+        }
       ]
     },
-    { "label": "Databases", "view": "core.db_manager", "endpoint": "/db/manager", "auth": false, "hide": true, "drawer": false },
+    { "label": "Databases", "view": "core.db_manager", "endpoint": "/db/manager", "auth": false, "hide": true, "drawer": false, "header": false, "sequence": 95, "description": "Switch workspace or create a new one." },
     { "view": "core.login", "endpoint": "/login", "auth": false, "header": false }
   ]
 }

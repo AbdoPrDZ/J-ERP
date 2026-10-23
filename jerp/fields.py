@@ -15,6 +15,41 @@ from __future__ import annotations
 from psycopg.types.json import Json
 
 
+def _relation_value(instance, field, value):
+  """Resolve a many2one value into a recordset of the related model."""
+
+  from jerp.models import BaseModel, RecordSet
+
+  if isinstance(value, BaseModel):
+    return RecordSet([value])
+  if value in (None, False, '', 0, '0'):
+    return RecordSet()
+
+  from jerp.env import Environment
+
+  try:
+    registry = Environment.instance.registry()
+    comodel = registry.get(field.comodel)
+  except Exception:
+    comodel = None
+  if comodel is None:
+    return value
+
+  if isinstance(value, str) and value.startswith('draft:'):
+    record = comodel._draft_record(int(value.split(':', 1)[1]))
+    if record is not None:
+      return RecordSet([record])
+    return RecordSet()
+  if isinstance(value, dict):
+    value = value.get('id')
+    if value in (None, ''):
+      return RecordSet()
+  try:
+    return comodel.browse(int(value))
+  except (TypeError, ValueError):
+    return value
+
+
 class Field:
   """Base class for every field type."""
 
@@ -39,6 +74,8 @@ class Field:
     help=None,
     hide=False,
     multi_language=False,
+    compute=None,
+    store=True,
   ):
     self.name = name
     self.required = required
@@ -54,6 +91,13 @@ class Field:
     #: Store alternate-language values in ``sys.multi_lang_char`` while the
     #: column itself keeps the default language value.
     self.multi_language = bool(multi_language)
+    #: Name of a model method (or a callable) computing this field's value.
+    self.compute = compute
+    #: Whether the computed value is stored in the database.
+    self.store = store
+    if compute:
+      # Computed fields are never edited directly by the client.
+      self.readonly = True
     self.attr_name = None
 
   # --- descriptor protocol ------------------------------------------------
@@ -69,9 +113,25 @@ class Field:
   def __get__(self, instance, owner=None):
     if instance is None:
       return self
-    return instance.__dict__.get('_values', {}).get(self.attr_name)
+    if self.compute and hasattr(instance, '_compute_field'):
+      return instance._compute_field(self.attr_name)
+    value = instance.__dict__.get('_values', {}).get(self.attr_name)
+    if getattr(self, 'comodel', None):
+      return _relation_value(instance, self, value)
+    return value
 
   def __set__(self, instance, value):
+    if (
+      getattr(instance, '_persisted', False)
+      and not self.compute
+      and hasattr(instance, 'write')
+    ):
+      instance.write({self.attr_name: value})
+      return
+    if getattr(self, 'comodel', None) and hasattr(
+      type(instance), '_coerce_write_value'
+    ):
+      value = type(instance)._coerce_write_value(self.attr_name, value)
     instance.__dict__.setdefault('_values', {})[self.attr_name] = value
 
   # --- schema -------------------------------------------------------------
@@ -132,8 +192,8 @@ class Field:
 class StringField(Field):
   ttype = 'char'
 
-  def __init__(self, name=None, size=255, **kwargs):
-    super().__init__(name=name, **kwargs)
+  def __init__(self, name=None, default='', size=255, **kwargs):
+    super().__init__(name=name, default=default, **kwargs)
     self.size = size
 
   def column_type(self) -> str:
@@ -142,6 +202,9 @@ class StringField(Field):
 
 class TextField(Field):
   ttype = 'text'
+
+  def __init__(self, default='', **kwargs):
+    super().__init__(default=default, **kwargs)
 
   def column_type(self) -> str:
     return 'text'
@@ -154,8 +217,8 @@ class PasswordField(StringField):
 class IntegerField(Field):
   ttype = 'integer'
 
-  def __init__(self, name=None, **kwargs):
-    super().__init__(name=name, **kwargs)
+  def __init__(self, name=None, default=0, **kwargs):
+    super().__init__(name=name, default=default, **kwargs)
 
   def column_type(self) -> str:
     return 'integer'
@@ -170,6 +233,9 @@ class IntegerField(Field):
 class BigIntField(IntegerField):
   ttype = 'bigint'
 
+  def __init__(self, default=0, **kwargs):
+    super().__init__(default=default, **kwargs)
+
   def column_type(self) -> str:
     return 'bigint'
 
@@ -177,8 +243,8 @@ class BigIntField(IntegerField):
 class NumericField(Field):
   ttype = 'numeric'
 
-  def __init__(self, name=None, precision=16, scale=2, **kwargs):
-    super().__init__(name=name, **kwargs)
+  def __init__(self, name=None, default=0.0, precision=16, scale=2, **kwargs):
+    super().__init__(name=name, default=default, **kwargs)
     self.precision = precision
     self.scale = scale
 
@@ -191,6 +257,9 @@ class NumericField(Field):
 class FloatField(Field):
   ttype = 'double'
 
+  def __init__(self, default=0.0, **kwargs):
+    super().__init__(default=default, **kwargs)
+
   def column_type(self) -> str:
     return 'double precision'
 
@@ -200,6 +269,9 @@ class FloatField(Field):
 
 class BooleanField(Field):
   ttype = 'boolean'
+
+  def __init__(self, default=False, **kwargs):
+    super().__init__(default=default, **kwargs)
 
   def column_type(self) -> str:
     return 'boolean'
@@ -243,7 +315,7 @@ class JsonField(Field):
 class SelectionField(StringField):
   ttype = 'selection'
 
-  def __init__(self, name=None, selection=None, **kwargs):
+  def __init__(self, selection=None, *, name=None, **kwargs):
     super().__init__(name=name, **kwargs)
     self.selection = list(selection or [])
 
@@ -251,7 +323,7 @@ class SelectionField(StringField):
 class Many2oneField(BigIntField):
   ttype = 'many2one'
 
-  def __init__(self, name=None, comodel=None, index=True, **kwargs):
+  def __init__(self, comodel=None, *, name=None, index=True, **kwargs):
     super().__init__(name=name, index=index, **kwargs)
     self.comodel = comodel
 

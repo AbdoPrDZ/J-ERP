@@ -61,6 +61,7 @@ class Config:
     )
     self.modules_path = data.get('modules_path', 'modules')
     self.schema = data.get('schema', 'public')
+    self.database = os.environ.get('JERP_DATABASE', data.get('database'))
     self.ui_dist = data.get('ui_dist', 'data/ui')
     self.views_dir = data.get('views_dir', 'data/view')
     self.uploads_dir = data.get('uploads_dir', 'data/uploads')

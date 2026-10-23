@@ -7,6 +7,7 @@ request (or any scoped block) can select which database the ORM talks to.
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -26,9 +27,59 @@ class _EnvironmentMeta(type):
 class Environment(metaclass=_EnvironmentMeta):
   _instance: 'Environment | None' = None
 
-  def __init__(self, databases):
+  def __init__(self, databases=None, database: str | None = None):
+    standalone = databases is None
+    if standalone:
+      from jerp.config import Config
+      from jerp.db import DatabaseManager
+
+      databases = DatabaseManager(Config.load())
+
     self.databases = databases
     self.router = Router()
+
+    if standalone:
+      database = database or self._default_database()
+      if database:
+        _active_database.set(database)
+      type(self)._instance = self
+    elif database:
+      _active_database.set(database)
+
+  def _default_database(self) -> str | None:
+    """Choose a database for a standalone ``Environment()``."""
+
+    configured = os.environ.get('JERP_DATABASE')
+    if not configured:
+      configured = getattr(self.databases.config, 'database', None)
+    if configured:
+      return configured
+    names = self.databases.list_databases()
+    if not names:
+      raise RuntimeError(
+        'No J-ERP database was found. Create one in the application first.'
+      )
+    for candidate in ('J-ERP', 'jerp'):
+      if candidate in names:
+        return candidate
+    if len(names) == 1:
+      return names[0]
+    raise RuntimeError(
+      'Several databases exist; set JERP_DATABASE to choose one.'
+    )
+
+  def __getitem__(self, model_name: str):
+    registry = self.registry()
+    registry.ensure_loaded()
+    model = registry.get(model_name)
+    if model is None:
+      raise KeyError(f'Unknown model "{model_name}".')
+    return model
+
+  def __contains__(self, model_name: str) -> bool:
+    registry = self.registry()
+    registry.ensure_loaded()
+    return registry.get(model_name) is not None
 
   # --- initialization -----------------------------------------------------
 

@@ -1,5 +1,5 @@
 from jerp import fields, models
-from jerp.env import Environment
+from jerp.api import on_change, depends_on
 
 
 class SaleOrderLine(models.Model):
@@ -9,100 +9,57 @@ class SaleOrderLine(models.Model):
   _label = 'name'
 
   order_id = fields.Many2oneField(
+    'sale.order',
     name='Order',
-    comodel='sale.order',
-    required=True,
     help='Sales order this line belongs to.',
+    required=True,
   )
   product_id = fields.Many2oneField(
+    'stock.product',
     name='Product',
-    comodel='stock.product',
-    required=True,
     help='Product sold on this line.',
+    required=True,
   )
   name = fields.StringField(
     name='Description',
-    required=True,
     help='Text shown for this line on the order.',
+    required=True,
   )
   quantity = fields.FloatField(
     name='Quantity',
+    help='Number of units ordered.',
     default=1.0,
     required=True,
-    help='Number of units ordered.',
+  )
+  standard_price = fields.FloatField(
+    name='Cost',
+    help='Cost of one unit.',
+    required=True,
+    readonly=True,
   )
   price_unit = fields.FloatField(
     name='Unit price',
-    default=0.0,
-    required=True,
     help='Selling price for one unit.',
   )
   subtotal = fields.FloatField(
     name='Subtotal',
-    default=0.0,
-    readonly=True,
     help='Quantity multiplied by unit price; calculated automatically.',
+    compute='_compute_subtotal',
+  )
+  margin = fields.FloatField(
+    name='Margin',
+    help='Profit margin for this line, as a percentage of the unit price; calculated automatically.',
+    compute='_compute_margin',
   )
 
-  # --- totals -------------------------------------------------------------
+  @on_change(['product_id'])
+  def _on_change_product_id(self):
+    for line in self:
+      line.name = line.product_id.name  if line.product_id else ""
+      line.standard_price = line.product_id.standard_price  if line.product_id else 0.0
+      line.price_unit = line.product_id.price  if line.product_id else 0.0
 
-  @classmethod
-  def _refresh_order(cls, order_id):
-    if not order_id:
-      return
-    SaleOrder = Environment.instance.registry().get('sale.order')
-    if SaleOrder is not None:
-      SaleOrder.recalculate_total(order_id)
-
-  @staticmethod
-  def _subtotal(quantity, price) -> float:
-    return float(quantity or 0.0) * float(price or 0.0)
-
-  @classmethod
-  def temp_values(cls, values) -> dict:
-    values = dict(values)
-    quantity = values.get('quantity')
-    if quantity is None:
-      quantity = cls._fields['quantity'].default or 0.0
-    price = values.get('price_unit')
-    if price is None:
-      price = cls._fields['price_unit'].default or 0.0
-    values['subtotal'] = cls._subtotal(quantity, price)
-    return values
-
-  # --- CRUD overrides -----------------------------------------------------
-
-  @classmethod
-  def create(cls, **values):
-    quantity = values.get('quantity')
-    if quantity is None:
-      quantity = cls._fields['quantity'].default or 0.0
-    price = values.get('price_unit')
-    if price is None:
-      price = cls._fields['price_unit'].default or 0.0
-
-    values['subtotal'] = cls._subtotal(quantity, price)
-    record = super().create(**values)
-    type(record)._refresh_order(record.order_id)
-    return record
-
-  def write(self, values) -> bool:
-    values = dict(values)
-    old_order = self.order_id
-
-    if 'quantity' in values or 'price_unit' in values:
-      quantity = values.get('quantity', self.quantity)
-      price = values.get('price_unit', self.price_unit)
-      values['subtotal'] = self._subtotal(quantity, price)
-
-    result = super().write(values)
-    type(self)._refresh_order(old_order)
-    if self.order_id != old_order:
-      type(self)._refresh_order(self.order_id)
-    return result
-
-  def unlink(self) -> bool:
-    order_id = self.order_id
-    result = super().unlink()
-    type(self)._refresh_order(order_id)
-    return result
+  @depends_on(['quantity', 'price_unit'])
+  def _compute_subtotal(self):
+    for line in self:
+      line.subtotal = float(line.quantity) * float(line.price_unit)

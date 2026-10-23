@@ -20,12 +20,28 @@ keyword arguments.
 
 - Response: `{"result": <value>}`.
 - Standard exposed methods: `all`, `count`, `find`, `create`, `update`,
-  `delete`, `fields`.
+  `delete`, `delete_many`, `fields`.
+- Draft methods: `new`, `edit`, `change`, `drafts`, `discard`, `discard_all`,
+  `remove`, `save`, `commit`.
+  - `new` without a token is Python-only (in-memory record); over HTTP the UI
+    always sends a token. `new` accepts `reuse: false` to create a second row
+    draft for the same token.
+  - `change` accepts `{draft_id, values}` and returns `values`, `dirty`, `errors`,
+    `warnings`, `domains`, `version`.
+  - `commit` accepts `{token, parent_field?, parent_id?}` and writes all drafts
+    in the token atomically.
 - Custom methods become callable by decorating them with
-  `@jerp.api_expose` (works with `classmethod`/`staticmethod`).
+  `@jerp.api_expose` (works with class/static methods and instance methods).
+- Instance methods receive the record identified by `id` (or `draft_id`) in the
+  body; `confirm(self)` in the sale module is an example. They may set fields
+  directly; assignments on persisted records are written immediately.
+- `create` accepts a positional dictionary in Python and keyword arguments over
+  HTTP. Many2one values may be records, ids or `draft:<id>` references.
 - `all` accepts `domain`, `fields`, `order`, `limit`, `offset`; a domain is a
   list of `(field, operator, value)` leaves (`=`, `!=`, `>`, `<`, `in`,
   `like`, `ilike`, `is null`, …) combined with AND.
+- Computed fields are returned by `all`/`find` (evaluated on read) but are
+  read-only in the field schema.
 - Errors: `no_database` (400), `unknown_model` (404), `unknown_method` (404),
   `bad_arguments` (400), `call_failed` (400).
 
@@ -49,6 +65,7 @@ keyword arguments.
 | `POST /api/upload`, `POST /api/upload/confirm` | Store file to tmp, then confirm and create a `file` record |
 | `GET /__storage/<name>` | Serve a stored file (outside `/api`) |
 | `/__endpoints` | URL prefixes consumed by the Vite dev proxy |
+| `/__modules` | Installed module names for the dev shell (uses `jerp_db`) |
 
 Database names are validated as `^[a-z_][a-z0-9_]{0,62}$`.
 
@@ -56,6 +73,11 @@ Database names are validated as `^[a-z_][a-z0-9_]{0,62}$`.
 
 - Pages are declared in each module's `configure.json` under `routes` (page
   entries need `view`; groups use `label` + `children`).
+- Page/route options: `label`, `view`, `endpoint`, `params`, `sequence`, `img`,
+  `description`, `auth`, `header`, `menu`, `drawer`, `hide`, `add_to_home`.
+- `add_to_home: true` puts the page (or group, linking to its first page) in the
+  Home quick-access list. Hidden pages can still be flagged; the server injects
+  them as `__JERP_HOME__` using only installed modules.
 - A page with `endpoint` becomes a server route; pages without one are served by
   `/view?name=<view>`.
 - Page routes default to `auth: true`: without a `jerp_user` cookie the request
@@ -64,4 +86,4 @@ Database names are validated as `^[a-z_][a-z0-9_]{0,62}$`.
   enforce it centrally; authorization for API endpoints is currently absent.
   Do not assume the model API is protected beyond the login page flow.
 - Session identity is the presence of the `jerp_user` cookie; the login handler
-  verifies credentials against the selected database's `users` table.
+  verifies credentials against the selected database's `sys_user` table.

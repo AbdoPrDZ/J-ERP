@@ -10,6 +10,7 @@ task.
 | `auth.md` | Authentication and session | Login, cookies, user model, current authorization limits |
 | `ui.md` | Shared React UI kit and view pipeline | Building views, component behavior, runtime module loading |
 | `stock.md` | Stock business module | Products, dependencies on core, extending stock |
+| `sale.md` | Sales business module | Orders, lines, computed totals, state actions |
 
 Rules:
 

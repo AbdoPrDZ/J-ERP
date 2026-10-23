@@ -1,10 +1,16 @@
 import * as React from 'react';
 
 import { model } from '../../model';
-import { cacheClient } from '../../cache';
+import type {
+  DataClient,
+  DraftChange,
+  DraftRecord,
+  ListParams,
+} from '../../model';
+import { DraftQueue } from '../../draft';
 import type { FieldDescriptor } from '../../types';
 import { Table, type TableInlineEdit } from './Table';
-import { FormContext, FormTabContext } from './context';
+import { DraftContext, FormTabContext } from './context';
 import { useModelFields } from './useModelFields';
 import { validateValues, type FormErrors } from './validation';
 
@@ -18,10 +24,205 @@ export interface FormTableProps {
   children?: React.ReactNode;
 }
 
+interface DraftRow extends Record<string, unknown> {
+  id: string;
+  _record_id?: number | null;
+  _draft_id?: number;
+  _draft_record?: DraftRecord;
+}
 
-/** A table of child records filtered by the current form record. */
+function compareValues(a: unknown, b: unknown): number {
+  if (a === b) {
+    return 0;
+  }
+  if (a === null || a === undefined) {
+    return 1;
+  }
+  if (b === null || b === undefined) {
+    return -1;
+  }
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a - b;
+  }
+  return String(a).localeCompare(String(b));
+}
+
+function sortRows(rows: DraftRow[], order?: string) {
+  if (!order) {
+    return rows;
+  }
+  const specs = order
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  for (const spec of [...specs].reverse()) {
+    const [name, direction] = spec.split(/\s+/);
+    const reverse = String(direction ?? '').toLowerCase() === 'desc';
+    rows.sort((left, right) => {
+      const result = compareValues(left[name], right[name]);
+      return reverse ? -result : result;
+    });
+  }
+  return rows;
+}
+
+interface DraftRowsClient extends DataClient {
+  invalidate: () => void;
+}
+
+function makeRowsClient(
+  childModel: string,
+  token: string,
+  parentModel: string,
+  parentDraftId: number | null,
+  parentRecordId: number | string | null,
+  relationField: string,
+): DraftRowsClient {
+  let rows: DraftRow[] = [];
+  let loaded = false;
+  let loading: Promise<void> | null = null;
+
+  const load = async () => {
+    if (loaded) {
+      return;
+    }
+    if (!loading) {
+      loading = (async () => {
+        const realRows = parentRecordId
+          ? await model(childModel).all<Record<string, unknown>>({
+              domain: [[relationField, '=', parentRecordId]],
+            })
+          : [];
+        const realIds = new Set(realRows.map((row) => String(row.id)));
+        const drafts = (await model(childModel).drafts(token)).filter(
+          (draft) => draft.model === childModel,
+        );
+        const byRecord = new Map<string, DraftRecord>();
+        for (const draft of drafts) {
+          if (draft.record_id !== null && draft.record_id !== undefined) {
+            byRecord.set(String(draft.record_id), draft);
+          }
+        }
+
+        const merged: DraftRow[] = [];
+        for (const real of realRows) {
+          const draft = byRecord.get(String(real.id));
+          if (draft?.state === 'delete') {
+            continue;
+          }
+          merged.push({
+            ...real,
+            ...(draft?.state === 'update' ? draft.values : {}),
+            id: `record:${String(real.id)}`,
+            _record_id: Number(real.id),
+            _draft_id: draft?.id,
+            _draft_record: draft,
+          });
+        }
+
+        for (const draft of drafts) {
+          if (draft.state !== 'create') {
+            continue;
+          }
+          const relationValue = draft.values[relationField];
+          const belongs =
+            (parentDraftId !== null &&
+              relationValue === `draft:${parentDraftId}`) ||
+            (parentRecordId !== null &&
+              String(relationValue) === String(parentRecordId)) ||
+            (parentRecordId === null && relationValue === undefined);
+          if (!belongs) {
+            continue;
+          }
+          merged.unshift({
+            ...draft.values,
+            id: `draft:${draft.id}`,
+            _record_id: null,
+            _draft_id: draft.id,
+            _draft_record: draft,
+          });
+        }
+
+        rows = merged;
+        loaded = true;
+      })();
+    }
+    await loading;
+  };
+
+  const remove = async (id: number | string) => {
+    const key = String(id);
+    if (key.startsWith('draft:')) {
+      const draftId = Number(key.slice(6));
+      await model(childModel).discardDraft(draftId);
+    } else if (key.startsWith('record:')) {
+      const recordId = key.slice(7);
+      await model(childModel).removeDraft(token, recordId);
+    } else {
+      return false;
+    }
+    loaded = false;
+    loading = null;
+    return true;
+  };
+
+  return {
+    async all<T = Record<string, unknown>>(params: ListParams = {}) {
+      await load();
+      let result = [...rows];
+      result = sortRows(result, params.order);
+      const offset = params.offset ?? 0;
+      if (offset) {
+        result = result.slice(offset);
+      }
+      if (params.limit !== undefined) {
+        result = result.slice(0, params.limit);
+      }
+      return result as T[];
+    },
+    async count() {
+      await load();
+      return rows.length;
+    },
+    async find<T = Record<string, unknown>>(id: number | string) {
+      await load();
+      return (rows.find((row) => row.id === String(id)) ?? null) as T | null;
+    },
+    async create() {
+      throw new Error('FormTable creates records through the draft API.');
+    },
+    async update() {
+      throw new Error('FormTable edits records through the draft API.');
+    },
+    delete: remove,
+    async deleteMany(ids) {
+      let count = 0;
+      for (const id of ids) {
+        if (await remove(id)) {
+          count += 1;
+        }
+      }
+      return count;
+    },
+    async call<T = unknown>(
+      func: string,
+      params: Record<string, unknown> = {},
+    ) {
+      if (func === 'delete') {
+        return (await remove(params.id as number | string)) as unknown as T;
+      }
+      throw new Error(`Unsupported FormTable action "${func}".`);
+    },
+    invalidate() {
+      loaded = false;
+      loading = null;
+    },
+  };
+}
+
+/** A table of related records backed by server-side drafts. */
 export function FormTable({
-  model: modelName,
+  model: childModel,
   emptyMessage = 'No records.',
   createLabel = 'Add',
   canCreate = true,
@@ -29,14 +230,12 @@ export function FormTable({
   canDelete = true,
   children,
 }: FormTableProps) {
-  const form = React.useContext(FormContext);
-  const schema = useModelFields(modelName);
-  const parentModel = form?.model;
-  const rawParentId = form?.recordId ?? form?.values?.id ?? null;
-  const parentId =
-    typeof rawParentId === 'string' || typeof rawParentId === 'number'
-      ? rawParentId
-      : null;
+  const draftContext = React.useContext(DraftContext);
+  const schema = useModelFields(childModel);
+  const parentModel = draftContext?.model;
+  const parentDraftId = draftContext?.draftId ?? null;
+  const parentRecordId = draftContext?.recordId ?? null;
+  const token = draftContext?.token;
 
   const relationField = React.useMemo(() => {
     if (!parentModel) {
@@ -69,134 +268,221 @@ export function FormTable({
     );
   }, [schema, relationField?.name]);
 
-  const [mode, setMode] = React.useState<'create' | 'edit' | null>(null);
-  const [editingId, setEditingId] = React.useState<number | string | null>(null);
-  const [focusField, setFocusField] = React.useState<string | null>(null);
-  const [values, setValues] = React.useState<Record<string, unknown>>({});
-  const [errors, setErrors] = React.useState<FormErrors>({});
-  const [saving, setSaving] = React.useState(false);
-  const [formError, setFormError] = React.useState<string | null>(null);
-  const [revision, setRevision] = React.useState(0);
-  const cache = React.useMemo(
+  const client = React.useMemo(
     () =>
-      relationField
-        ? cacheClient(modelName, relationField.name, parentId)
+      token && parentModel && relationField
+        ? makeRowsClient(
+            childModel,
+            token,
+            parentModel,
+            parentDraftId,
+            parentRecordId,
+            relationField.name,
+          )
         : undefined,
-    [modelName, relationField?.name, parentId],
+    [
+      childModel,
+      token,
+      parentModel,
+      parentDraftId,
+      parentRecordId,
+      relationField?.name,
+    ],
   );
 
-  React.useEffect(() => {
-    if (!relationField || !form?.registerCommit || !cache) {
+  const [editor, setEditor] = React.useState<{
+    draft: DraftRecord;
+    values: Record<string, unknown>;
+    errors: FormErrors;
+    saving: boolean;
+    focusField: string | null;
+  } | null>(null);
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [revision, setRevision] = React.useState(0);
+  const queueRef = React.useRef<DraftQueue | null>(null);
+  const unregisterRef = React.useRef<(() => void) | null>(null);
+
+  React.useEffect(
+    () => () => {
+      queueRef.current?.dispose();
+      unregisterRef.current?.();
+    },
+    [],
+  );
+
+  const disposeEditor = () => {
+    queueRef.current?.dispose();
+    queueRef.current = null;
+    unregisterRef.current?.();
+    unregisterRef.current = null;
+  };
+
+  const refreshRows = () => {
+    client?.invalidate();
+    setRevision((value) => value + 1);
+    draftContext?.notifyDraftsChanged();
+  };
+
+  const openDraft = (draft: DraftRecord, focusField?: string | null) => {
+    if (!draftContext) {
       return;
     }
-    return form.registerCommit(async (recordId) => {
-      await cache.commit(relationField.name, recordId);
-    });
-  }, [relationField, form?.registerCommit, cache]);
-
-  const initialValues = () => {
-    const initial: Record<string, unknown> = {};
-    for (const field of editFields) {
-      if (field.default !== undefined) {
-        initial[field.name] = field.default;
-      }
-    }
-    return initial;
-  };
-
-  const openCreate = () => {
-    setMode('create');
-    setEditingId(null);
-    setFocusField(editFields[0]?.name ?? null);
-    setValues(initialValues());
-    setErrors({});
+    disposeEditor();
     setFormError(null);
+    const queue = new DraftQueue(
+      draft.model,
+      draft.id,
+      (change: DraftChange) => {
+        const pending = queue.pendingValues();
+        setEditor((current) =>
+          current
+            ? {
+                ...current,
+                values: {
+                  ...current.values,
+                  ...change.values,
+                  ...pending,
+                },
+                errors: change.errors ?? {},
+                draft: {
+                  ...current.draft,
+                  values: change.values,
+                  dirty: change.dirty,
+                  version: change.version,
+                },
+              }
+            : current,
+        );
+      },
+      (err) => setFormError(err.message),
+    );
+    queueRef.current = queue;
+    unregisterRef.current = draftContext.registerQueue(queue);
+    setEditor({
+      draft,
+      values: draft.values,
+      errors: {},
+      saving: false,
+      focusField: focusField ?? editFields[0]?.name ?? null,
+    });
   };
 
-  const openEdit = async (id: string, fieldName?: string) => {
+  const finishEditor = async (commit: boolean): Promise<boolean> => {
+    if (!editor) {
+      return false;
+    }
+    setEditor((current) => (current ? { ...current, saving: true } : current));
+    try {
+      if (commit) {
+        const nextErrors = validateValues(
+          editFields.map((field) => ({
+            field,
+            value: editor.values[field.name],
+          })),
+        );
+        if (Object.keys(nextErrors).length > 0) {
+          setEditor((current) =>
+            current
+              ? { ...current, errors: nextErrors, saving: false }
+              : current,
+          );
+          return false;
+        }
+        const queue = queueRef.current;
+        await queue?.flush();
+        const queueErrors = queue?.lastErrors ?? {};
+        if (Object.keys(queueErrors).length > 0) {
+          setEditor((current) =>
+            current
+              ? { ...current, errors: queueErrors, saving: false }
+              : current,
+          );
+          return false;
+        }
+      }
+      disposeEditor();
+      setEditor(null);
+      refreshRows();
+      return true;
+    } catch (err) {
+      setFormError((err as Error).message);
+      setEditor((current) => (current ? { ...current, saving: false } : current));
+      return false;
+    }
+  };
+
+  const cancelEditor = async () => {
+    if (!editor) {
+      return;
+    }
+    const draftId = editor.draft.id;
+    disposeEditor();
+    setEditor(null);
+    try {
+      await model(childModel).discardDraft(draftId);
+    } catch (err) {
+      setFormError((err as Error).message);
+    }
+    refreshRows();
+  };
+
+  const addRecord = async () => {
+    if (!token || !relationField || !draftContext) {
+      return;
+    }
     setFormError(null);
     try {
-      const source = cache ?? model(modelName);
-      const record = await source.find<Record<string, unknown>>(id);
-      if (!record) {
-        setFormError('Record not found.');
-        return;
+      if (editor) {
+        const ok = await finishEditor(true);
+        if (!ok) {
+          return;
+        }
       }
-      const target =
+      const draft = await model(childModel).newDraft(
+        token,
+        {
+          [relationField.name]: `draft:${parentDraftId}`,
+        },
+        false,
+      );
+      refreshRows();
+      openDraft(draft, editFields[0]?.name ?? null);
+    } catch (err) {
+      setFormError((err as Error).message);
+    }
+  };
+
+  const editRow = async (row: DraftRow, fieldName: string) => {
+    if (!token || !relationField) {
+      return;
+    }
+    try {
+      if (editor) {
+        const ok = await finishEditor(true);
+        if (!ok) {
+          return;
+        }
+      }
+      let draft = row._draft_record;
+      if (!draft) {
+        const recordId = row._record_id;
+        if (recordId === null || recordId === undefined) {
+          return;
+        }
+        draft = await model(childModel).editDraft(recordId, token);
+      }
+      const focus =
         fieldName && editFields.some((field) => field.name === fieldName)
           ? fieldName
           : editFields[0]?.name ?? null;
-      setMode('edit');
-      setEditingId(id);
-      setFocusField(target);
-      setValues(record);
-      setErrors({});
+      openDraft(draft, focus);
+      refreshRows();
     } catch (err) {
       setFormError((err as Error).message);
     }
   };
 
-  const close = () => {
-    setMode(null);
-    setEditingId(null);
-    setFocusField(null);
-    setValues({});
-    setErrors({});
-    setFormError(null);
-  };
-
-  const changeValue = (name: string, value: unknown) => {
-    setValues((current) => ({ ...current, [name]: value }));
-    setErrors((current) => {
-      if (!current[name]) {
-        return current;
-      }
-      const next = { ...current };
-      delete next[name];
-      return next;
-    });
-  };
-
-  const save = async () => {
-    if (!mode || saving || !relationField) {
-      return;
-    }
-    const nextErrors = validateValues(
-      editFields.map((field) => ({ field, value: values[field.name] })),
-    );
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors(nextErrors);
-      setFormError(null);
-      return;
-    }
-
-    setSaving(true);
-    setFormError(null);
-    try {
-      const source = cache ?? model(modelName);
-      const payload: Record<string, unknown> = {};
-      for (const field of editFields) {
-        payload[field.name] = values[field.name];
-      }
-      if (mode === 'edit' && editingId !== null) {
-        await source.update(editingId, payload);
-      } else {
-        await source.create(payload);
-      }
-      setRevision((value) => value + 1);
-      setMode(null);
-      setEditingId(null);
-      setFocusField(null);
-      setValues({});
-      setErrors({});
-    } catch (err) {
-      setFormError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!form) {
+  if (!draftContext) {
     return (
       <p className="text-sm text-slate-500">
         FormTable must be used inside a Form.
@@ -208,27 +494,37 @@ export function FormTable({
     return <p className="text-sm text-slate-400">Loading…</p>;
   }
 
-  if (!parentModel || !relationField) {
+  if (!parentModel || !relationField || !client) {
     return (
       <p className="text-sm text-slate-500">
         No relation field to &quot;{parentModel ?? 'the parent model'}&quot; was
-        found on {modelName}.
+        found on {childModel}.
       </p>
     );
   }
 
-  const inlineEdit: TableInlineEdit | undefined = mode
+  const inlineEdit: TableInlineEdit | undefined = editor
     ? {
-        mode,
-        editingId,
-        focusField,
-        values,
-        errors,
+        mode: editor.draft.state === 'create' ? 'create' : 'edit',
+        editingId:
+          editor.draft.state === 'create'
+            ? `draft:${editor.draft.id}`
+            : `record:${String(editor.draft.record_id)}`,
+        focusField: editor.focusField,
+        values: editor.values,
+        errors: editor.errors,
         editableFields: editFields.map((field) => field.name),
-        saving,
-        onChange: changeValue,
-        onSave: () => void save(),
-        onCancel: close,
+        saving: editor.saving,
+        onChange: (name, value) => {
+          setEditor((current) =>
+            current
+              ? { ...current, values: { ...current.values, [name]: value } }
+              : current,
+          );
+          queueRef.current?.setField(name, value);
+        },
+        onSave: () => void finishEditor(true),
+        onCancel: () => void cancelEditor(),
       }
     : undefined;
 
@@ -238,8 +534,8 @@ export function FormTable({
         <button
           type="button"
           className="rounded bg-brand-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-40"
-          disabled={!canCreate || Boolean(mode)}
-          onClick={openCreate}
+          disabled={!canCreate || Boolean(editor) || parentDraftId === null}
+          onClick={() => void addRecord()}
         >
           {createLabel}
         </button>
@@ -253,15 +549,15 @@ export function FormTable({
 
       <FormTabContext.Provider value={true}>
         <Table
-          model={modelName}
-          client={cache}
+          model={childModel}
+          client={client}
           emptyMessage={emptyMessage}
           inlineEdit={inlineEdit}
           refreshKey={revision}
           onCellClick={
             canEdit
               ? (record, field) =>
-                  void openEdit(String(record.id), field)
+                  void editRow(record as DraftRow, field)
               : undefined
           }
           selectable={false}

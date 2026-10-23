@@ -30,6 +30,32 @@ export interface DataClient {
   ): Promise<T>;
 }
 
+export interface DraftRecord {
+  id: number;
+  draft_id: number;
+  model: string;
+  record_id?: number | null;
+  state: 'create' | 'update' | 'delete';
+  values: Record<string, unknown>;
+  dirty: Record<string, unknown>;
+  version: number;
+  base_stamp?: string | null;
+}
+
+export interface DraftChange extends DraftRecord {
+  changed: string[];
+  warnings: unknown[];
+  errors: Record<string, string>;
+  domains: Record<string, unknown>;
+}
+
+export interface DraftCommitResult {
+  draft_id: number;
+  model: string;
+  id: number;
+  state: string;
+}
+
 /**
  * Typed client for a model's API endpoint.
  *
@@ -86,6 +112,60 @@ export class ModelClient implements DataClient {
 
   deleteMany(ids: Array<number | string>): Promise<number> {
     return this.call<number>('delete_many', { ids });
+  }
+
+  newDraft(
+    token?: string,
+    values?: Record<string, unknown>,
+    reuse = true,
+  ): Promise<DraftRecord> {
+    return this.call<DraftRecord>('new', { token, values, reuse });
+  }
+
+  editDraft(
+    id: number | string,
+    token?: string,
+    values?: Record<string, unknown>,
+  ): Promise<DraftRecord> {
+    return this.call<DraftRecord>('edit', { id, token, values });
+  }
+
+  changeDraft(
+    draftId: number | string,
+    values: Record<string, unknown>,
+  ): Promise<DraftChange> {
+    return this.call<DraftChange>('change', { draft_id: draftId, values });
+  }
+
+  drafts(token: string): Promise<DraftRecord[]> {
+    return this.call<DraftRecord[]>('drafts', { token });
+  }
+
+  discardDraft(draftId: number | string): Promise<boolean> {
+    return this.call<boolean>('discard', { draft_id: draftId });
+  }
+
+  discardAllDrafts(token: string): Promise<number> {
+    return this.call<number>('discard_all', { token });
+  }
+
+  removeDraft(
+    token: string,
+    id: number | string,
+  ): Promise<DraftRecord | null> {
+    return this.call<DraftRecord | null>('remove', { token, id });
+  }
+
+  commitDrafts(
+    token: string,
+    parentField?: string,
+    parentId?: number | string,
+  ): Promise<DraftCommitResult[]> {
+    return this.call<DraftCommitResult[]>('commit', {
+      token,
+      parent_field: parentField,
+      parent_id: parentId,
+    });
   }
 }
 

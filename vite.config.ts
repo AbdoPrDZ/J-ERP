@@ -38,6 +38,14 @@ export default defineConfig(({ command }) => ({
           const url = req.url || '/';
           const pathname = decodeURIComponent(url.split('?')[0]);
           const acceptsHtml = (req.headers.accept || '').includes('text/html');
+
+          // The favicon lives in public/; in dev the Vite root is the project
+          // root, so map the conventional URL to the static file.
+          if (pathname === '/favicon.ico') {
+            req.url = '/public/favicon.ico';
+            return next();
+          }
+
           if (!acceptsHtml) {
             return next();
           }

@@ -37,10 +37,12 @@ class User(models.Model):
     return value
 
   @classmethod
-  def create(cls, **values):
-    if 'password' in values:
-      values['password'] = cls._hash(values['password'])
-    return super().create(**values)
+  def create(cls, values=None, **kwargs):
+    payload = dict(values or {})
+    payload.update(kwargs)
+    if 'password' in payload:
+      payload['password'] = cls._hash(payload['password'])
+    return super().create(**payload)
 
   def write(self, values) -> bool:
     values = dict(values)

@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### ORM and drafts
+
+- Odoo-style model compatibility: positional `Many2oneField`/`SelectionField`
+  constructors, `compute=` fields, `@depends_on`, instance-style `@on_change`,
+  recordsets with `is_one()`/`ensure_one()`, many2one record access and
+  auto-discovered one2many relations with `(0/1/2/6, …)` commands.
+- In-memory `Model.new()` / `record.save()` for Python callers, `create(dict)`,
+  `Environment()` standalone convenience, `env['model']` mapping access and
+  `from jerp import Environment`.
+- Server-side form/table drafts in `temp.model`: `new`, `edit`, `change`,
+  `drafts`, `discard`, `discard_all`, `remove`, `save` and transactional
+  `commit`; `draft:<id>` relation refs, `base_stamp` conflict checks and parent
+  computed-value refresh.
+- Instance `@api_expose` dispatch (body `id`/`draft_id`) and the dual
+  `Model.save(draft_id)` / `record.save()` method.
+- Computed fields are evaluated on read and persisted on create/write/commit;
+  parent totals are recomputed after child rows commit.
+
+#### UI
+
+- Draft-aware `Form`, `FormTable` and `Many2oneField`; inline row editing,
+  multiple draft rows via `reuse: false`, 800 ms debounced changes and live
+  parent totals.
+- Sticky navbar/page/table headers, server-side table pagination/sorting, card
+  pagination, field validation and label fallbacks.
+- Modern Home dashboard with live counts and menu-driven quick access via
+  `add_to_home`.
+- Redesigned login (full logo, split brand/form layout, password visibility) and
+  database manager (card layout, stats, refreshed modals, no shell navbar).
+- New full logo asset and favicon.
+
+#### Navigation and tooling
+
+- `add_to_home` and `description` route options; server-injected
+  `__JERP_HOME__` built from installed modules (groups and hidden pages allowed).
+- Vite dev payload is filtered by installed modules through the new
+  `GET /__modules` endpoint instead of exposing every module on disk.
+- `build:views` now validates that every declared menu view has a build file and
+  supports nested view folders (`views/pages/*`).
+- Unit test suite (`tests/`) with ORM/API compatibility tests.
+
+#### Modules
+
+- `sale` module with orders/lines, computed subtotal/total, product on-change,
+  read-only cost, state actions (`confirm`, `done`, `cancel`, `reset_to_draft`)
+  and an order form with an inline line table.
+- `core` technical pages for Models, Fields, Menus and Data; organization pages
+  moved under `views/pages/`.
+- `stock` product cost and selling price fields.
+
+### Changed
+
+- Schema sync backfills new required columns on non-empty tables with neutral
+  values and drops incompatible defaults before type changes.
+- `temp.model.dirty` migrated to JSONB; draft reads accept dicts and legacy JSON
+  strings.
+- Menus and home shortcuts are resolved from the database's `sys_module` on each
+  render, so external installs/uninstalls appear after a refresh.
+- Seed/multilingual writes no longer re-enter `ensure_loaded` recursively.
+
+### Fixed
+
+- Login hanging during localization seeds (recursive seed application).
+- Login `server_error` when `temp.model.dirty` changed from text to JSONB.
+- Sales/Stock menus lingering after uninstall in production and Vite dev.
+- Duplicate inline draft row in embedded tables.
+
 ### Planned
 
 - Session-based authentication on top of the current user cookie

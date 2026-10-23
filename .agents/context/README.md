@@ -34,10 +34,12 @@ conflict, verify the code, correct the context, then continue.
 | Task | Read |
 |---|---|
 | Add/change a model or field | `database.md`, `domains/framework.md`, `workflows.md` |
+| Drafts, on-change or computed fields | `domains/framework.md`, `domains/ui.md`, `api.md` |
 | Add a module, page, or view | `domains/framework.md`, `domains/ui.md`, `workflows.md` |
 | Change an endpoint or the model API | `api.md`, `domains/framework.md` |
 | Login/session/permissions | `domains/auth.md` |
 | Stock / product features | `domains/stock.md` |
+| Sales orders and lines | `domains/sale.md` |
 | Frontend components or views | `domains/ui.md`, `conventions.md` |
 | Build/run/debug | `workflows.md` |
 

@@ -39,7 +39,13 @@ assembled from a shared shell plus per-module view bundles.
 - **`jerp.registry`** — per-database view of installed modules and their model
   classes.
 - **`jerp.models` / `jerp.fields`** — declarative models and typed fields; a
-  global `ModelRegistry` collects imported model classes.
+  global `ModelRegistry` collects imported model classes. Runtime records are
+  `RecordSet` lists (search/browse), many2one access returns a recordset, and
+  reverse one2many attributes are discovered from child models.
+- **`jerp.api`** — `api_expose`, `on_change` and `depends_on` decorators.
+- **`jerp.models` drafts** — server-side draft rows in `temp.model` for forms
+  and tables (`new`, `edit`, `change`, `save`, `commit`, `discard`), plus
+  in-memory pseudo-records for Python `Model.new()`.
 - **`jerp.schema`** — diffs declared fields against live PostgreSQL and applies
   DDL transactionally (see `database.md`).
 - **`jerp.modules`** — discovers modules from `configure.json`, installs/updates/
@@ -62,6 +68,8 @@ and its registry loaded on demand.
    - `/views/<module>/*` → built module view bundles in `data/view`
    - `/__assets/<module>/*` → raw module assets in `modules/<module>/ui/assets`
    - `/__storage/<name>` → stored upload (only if registered in `files`)
+   - `/__endpoints` and `/__modules` → dev-server discovery (URL prefixes and
+     installed module names for the selected database)
    - static files from `data/ui`
    - registered page routes (server-rendered shell)
    - SPA fallback for HTML navigations
@@ -74,7 +82,11 @@ and its registry loaded on demand.
   - an import map at `<!--jerp:head-->`: `react*` → `/react-runtime.js`,
     `@jerp/ui` → `/runtime.js`
   - JSON payload scripts at `<!--jerp:body-->`: `__JERP_VIEWS__`,
-    `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_MENUS__`, `__JERP_CONTEXT__`
+    `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_MENUS__`, `__JERP_HOME__`,
+    `__JERP_CONTEXT__`
+- `__JERP_HOME__` is built from pages/groups flagged `add_to_home` in the
+  installed modules (hidden pages included). The Home view renders it as quick
+  access links; stats are computed from the installed models.
 - `jerp/ui/src/core/main.ts` reads those payloads, registers view URLs, resolves
   the view from the element's `data-view`, the URL, or the route map, applies the
   login guard, and mounts the React root.
@@ -84,15 +96,37 @@ and its registry loaded on demand.
 - Module views are compiled per module by `tools/build-views.mjs` into
   `data/view/<module>/` with `manifest.json`; view key is
   `<module>.<snake_case_file>`.
-- In development, Vite serves the shell; `tools/vite-plugin-jerp.mjs` asks the
-  backend for its URL prefixes via `GET /__endpoints` and proxies them.
+- In development, Vite serves the shell. `tools/vite-plugin-jerp.mjs` asks the
+  backend for its URL prefixes via `GET /__endpoints`, then for each HTML request
+  fetches `GET /__modules` with the browser's `jerp_db` cookie to inject only the
+  installed modules' views, pages, menus and home shortcuts. With no database or
+  an unreachable backend it exposes `core` only.
+
+## Model Runtime
+
+- `search()` and `browse()` return `RecordSet` (a `list` subclass) supporting
+  `is_one()`/`ensure_one()` and attribute proxying for a single record.
+- A many2one field reads as a `RecordSet` of the related record, so
+  `line.product_id.name` works; `read()` still returns raw ids for the API/UI.
+- Reverse one2many attributes (`order.lines`) are discovered from child many2one
+  fields. Assigning `(0, 0, values)`, `(1, id, values)`, `(2, id)` or
+  `(6, 0, ids)` commands creates/updates/removes children.
+- `compute='_method'` fields evaluate lazily on access; `@depends_on([...])`
+  records dependencies. Stored values are recomputed on create/write/commit/save.
+- `@on_change([...])` handlers run server-side on a pseudo-record; assignments are
+  diffed into changed values and dependent computes follow. Both instance-style
+  (`self` mutations) and classmethod/value-dictionary handlers are supported.
+- `Model.new()` without a token returns an in-memory pseudo-record; `record.save()`
+  writes it (and its one2many children) in one transaction. With a token it
+  creates a server-side draft used by forms.
 
 ## Module System
 
 - A module is a directory under `modules/` containing `configure.json`
   (`name`, `version`, `summary`, `depends`, optional `logo`, `routes`).
 - `core` is the base module: always installed first, cannot be uninstalled, and
-  owns system models (`sys.module`, `sys.model`, `sys.field`, `users`, `files`).
+  owns system models (`sys.module`, `sys.model`, `sys.field`, `sys.lang`,
+  `sys.contact`, `sys.user`, `sys.file`, `temp.model`).
 - Installation is **per database**: it synchronizes the module's models and
   records the module in that database's `sys_module`.
 - Modules may provide `controller/` (auto-discovered routes), `models/`, and

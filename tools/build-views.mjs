@@ -65,35 +65,42 @@ function viewFiles(viewsDir) {
   return found;
 }
 
+function declaredViews(configurePath) {
+  if (!fs.existsSync(configurePath)) {
+    return [];
+  }
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(configurePath, 'utf8'));
+  } catch {
+    return [];
+  }
+  const result = [];
+  const walk = (entries) => {
+    for (const item of entries || []) {
+      if (item && item.view) {
+        result.push(item.view);
+      }
+      if (item && item.children) {
+        walk(item.children);
+      }
+    }
+  };
+  walk(config.routes || config.pages || []);
+  return result;
+}
+
 const filter = process.argv.slice(2);
 let built = 0;
+const missing = [];
 
 for (const moduleName of listModuleDirs(filter)) {
   const moduleRoot = path.join(modulesDir, moduleName);
   const viewsDir = path.join(moduleRoot, 'ui', 'src', 'views');
   const outDir = path.resolve('data', 'view', moduleName);
   const entryPoints = viewFiles(viewsDir);
-
-  if (!entryPoints.length) {
-    continue;
-  }
-
-  fs.mkdirSync(outDir, { recursive: true });
-
-  await build({
-    entryPoints,
-    outdir: outDir,
-    outbase: viewsDir,
-    bundle: true,
-    format: 'esm',
-    target: 'es2022',
-    jsx: 'automatic',
-    sourcemap: true,
-    external: EXTERNAL,
-    logLevel: 'warning',
-  });
-
   const manifest = { module: moduleName, views: {} };
+
   for (const entry of entryPoints) {
     const rel = path.relative(viewsDir, entry);
     const base = rel.replace(/\.(tsx|ts)$/, '');
@@ -102,15 +109,46 @@ for (const moduleName of listModuleDirs(filter)) {
     manifest.views[key] = out;
   }
 
-  fs.writeFileSync(
-    path.join(outDir, 'manifest.json'),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-  );
+  if (entryPoints.length) {
+    fs.mkdirSync(outDir, { recursive: true });
 
-  built += 1;
-  console.log(
-    `built ${moduleName} -> data/view/${moduleName}: ${Object.keys(manifest.views).join(', ')}`,
-  );
+    await build({
+      entryPoints,
+      outdir: outDir,
+      outbase: viewsDir,
+      bundle: true,
+      format: 'esm',
+      target: 'es2022',
+      jsx: 'automatic',
+      sourcemap: true,
+      external: EXTERNAL,
+      logLevel: 'warning',
+    });
+
+    fs.writeFileSync(
+      path.join(outDir, 'manifest.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+
+    built += 1;
+    console.log(
+      `built ${moduleName} -> data/view/${moduleName}: ${Object.keys(manifest.views).join(', ')}`,
+    );
+  }
+
+  for (const view of declaredViews(path.join(moduleRoot, 'configure.json'))) {
+    if (!manifest.views[view]) {
+      missing.push(`${moduleName}: ${view}`);
+    }
+  }
+}
+
+if (missing.length) {
+  console.error('Missing view files for declared menu entries:');
+  for (const item of missing) {
+    console.error(`  - ${item}`);
+  }
+  process.exitCode = 1;
 }
 
 if (!built) {

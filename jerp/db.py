@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 import psycopg
 from psycopg.rows import dict_row
@@ -16,6 +17,10 @@ from psycopg_pool import ConnectionPool
 
 from jerp.config import Config
 from jerp.dialect import PostgresDialect, quote_ident, quote_table
+
+#: Connection bound to the current nested transaction, shared by Database
+#: helpers and model CRUD so a commit can be atomic.
+_active_transaction: ContextVar = ContextVar('jerp_active_transaction', default=None)
 
 #: PostgreSQL identifiers are limited to NAMEDATALEN - 1 bytes.
 MAX_DATABASE_NAME_BYTES = 63
@@ -69,18 +74,35 @@ class Database:
 
   @contextmanager
   def connection(self):
+    current = _active_transaction.get()
+    if current is not None and current[0] is self:
+      yield current[1]
+      return
     self.start()
     with self._pool.connection() as conn:
       yield conn
 
   @contextmanager
   def transaction(self):
-    """Run a block inside a single transaction (committed on success)."""
+    """Run a block inside a single transaction (committed on success).
+
+    Nested ``transaction()`` calls on the same database reuse the active
+    connection, so model CRUD inside the block shares the transaction.
+    """
+
+    current = _active_transaction.get()
+    if current is not None and current[0] is self:
+      yield current[1]
+      return
 
     self.start()
     with self._pool.connection() as conn:
       with conn.transaction():
-        yield conn
+        token = _active_transaction.set((self, conn))
+        try:
+          yield conn
+        finally:
+          _active_transaction.reset(token)
 
   # --- query helpers ------------------------------------------------------
 

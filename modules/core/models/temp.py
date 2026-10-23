@@ -21,10 +21,33 @@ class TempModel(models.Model):
   model = fields.StringField(
     name='Model',
     required=True,
-    help='Target model that will receive these records on commit.',
+    help='Model of the record being temporarily stored.',
+  )
+  record_id = fields.BigIntField(
+    name='Record ID',
+    help='Existing record being edited, or empty for a new record.',
+  )
+  state = fields.SelectionField(
+    [('create', 'Create'), ('update', 'Update'), ('delete', 'Delete')],
+    name='State',
+    help='Draft state: create, update or delete.',
+    default='create',
   )
   data = fields.TextField(
     name='Data',
     required=True,
     help='JSON object containing the temporary record field values.',
+  )
+  dirty = fields.JsonField(
+    name='Dirty',
+    help='JSON object containing the fields changed from the original record.',
+  )
+  version = fields.IntegerField(
+    name='Version',
+    help='Incremented on every server-side draft change.',
+  )
+  base_stamp = fields.DateTimeField(
+    name='Base Stamp',
+    use_tz=True,
+    help='Updated-at value of the real record when the draft was created.',
   )

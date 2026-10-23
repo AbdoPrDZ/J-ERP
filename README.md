@@ -13,11 +13,13 @@ J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + Typ
 
 ## Highlights
 
-- **Per-database modules** — one server, many independent databases, each with its own set of installed modules and its own schema.
-- **No migrations** — models are declared in Python; the schema is diffed and synchronized transactionally on install/update.
-- **Multi-database management** — create, list, select and drop databases from the UI; access is scoped to the configured owner.
-- **Module-declared navigation** — menus, routes, page options and auth requirements live in each module's `configure.json`.
-- **Declarative page DSL** — compose pages from `Page`, `Table`, `Cards`, `Form`, `FormField`, `FormGroup`, `Action` and friends; no per-view plumbing.
+- **Per-database modules** - one server, many independent databases, each with its own set of installed modules and its own schema.
+- **No migrations** - models are declared in Python; the schema is diffed and synchronized transactionally on install/update.
+- **Odoo-style models** - positional relation/selection fields, recordsets, many2one record access, one2many commands, computed fields with `@depends_on` and server-side `@on_change`.
+- **Server-side drafts** - forms and embedded tables edit `temp.model` drafts with a debounced on-change round-trip, reload-safe state and atomic parent/child commit.
+- **Multi-database management** - create, list, select and drop databases from the UI; access is scoped to the configured owner.
+- **Module-declared navigation** - menus, routes, page options, auth requirements and `add_to_home` shortcuts live in each module's `configure.json`.
+- **Declarative page DSL** - compose pages from `Page`, `Table`, `Cards`, `Form`, `FormTable`, `FormField`, `FormGroup`, `Action` and friends; no per-view plumbing.
 - **Typed model API** — a single endpoint (`POST /api/model/<model>/<func>`) plus a typed client, instead of hand-written controllers for every screen.
 - **Views built on install** — module view bundles are compiled with esbuild into `data/view/<module>/` and loaded through an import map.
 - **Files and images** — two-step uploads, a `File` model, `FileField`/`ImageField` widgets, and storage served only for files known to the active database.
@@ -28,8 +30,9 @@ J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + Typ
 ```
 app.py                  HTTP entrypoint (host/port from jerp.config.json)
 jerp/                   Framework: ORM, schema sync, router, server, views, modules
-  models.py             Model metaclass, fields, CRUD, standard model API
+  models.py             Model metaclass, recordsets, CRUD, computed fields, drafts
   fields.py             Field types (char, text, int, float, date, file, image, password, …)
+  api.py                Decorators: api_expose, on_change, depends_on
   schema.py             Declarative schema synchronization
   modules.py            Module discovery, install/update/uninstall, build hooks
   views.py              Menu/route/view collection and shell rendering
@@ -38,6 +41,8 @@ jerp/                   Framework: ORM, schema sync, router, server, views, modu
 modules/<name>/         Feature modules (models, controllers, views, assets)
   configure.json        Module metadata, menus/routes, dependencies
 tools/                  Vite plugin and build scripts
+tests/                  Unit tests (python -m unittest discover -s tests)
+public/                 Vite HTML entry and favicon
 data/                   Generated: built UI, view bundles, uploads (git-ignored)
 ```
 
@@ -74,7 +79,7 @@ python app.py        # backend on :1347
 npm run dev          # Vite dev server on :5173 with HMR
 ```
 
-The Vite dev server discovers API/asset/storage proxies at startup by calling the backend's `GET /__endpoints`. If the backend was down when Vite started, restart Vite.
+The Vite dev server discovers API/asset/storage proxies at startup by calling the backend's `GET /__endpoints`. It also asks `GET /__modules` for each HTML request (using the browser's `jerp_db` cookie) so only modules installed in the selected database appear. Restart Vite after changing `vite.config.ts` or `tools/vite-plugin-jerp.mjs`.
 
 ### Useful commands
 
@@ -85,6 +90,7 @@ npm run typecheck                    # tsc -b
 npm run build                        # UI shell + shared runtime -> data/ui
 npm run build:views                  # module view bundles -> data/view
 npm run build:all                    # both
+python -m unittest discover -s tests # unit tests
 python -m jerp.cli install stock --database <db>
 python -m jerp.cli update --database <db>
 ```
@@ -98,6 +104,7 @@ python -m jerp.cli update --database <db>
 | `databases.host` / `port` / `user` / `password` / `sslmode` | PostgreSQL connection settings |
 | `databases.owner` | Only databases owned by this role are listed (defaults to the connecting user) |
 | `app.host` / `app.port` | HTTP bind address (default `127.0.0.1:1347`) |
+| `database` | Optional default database for standalone `Environment()` / `JERP_DATABASE` |
 | `modules_path` | Where modules are discovered (`modules`) |
 | `schema` | PostgreSQL schema used for tables (`public`) |
 | `ui_dist` | Built UI directory (`data/ui`) |
@@ -125,7 +132,7 @@ A module is a directory under `modules/` containing a `configure.json`:
 }
 ```
 
-Route entries accept `label`, `view`, `endpoint`, `params`, `sequence`, `auth`, `header`, `menu`, `hide` and nested `children`. `sequence` orders the navigation tree; `auth` defaults to `true`.
+Route entries accept `label`, `view`, `endpoint`, `params`, `sequence`, `img`, `description`, `auth`, `header`, `menu`, `drawer`, `hide`, `add_to_home` and nested `children`. `sequence` orders the navigation tree; `auth` defaults to `true`; `add_to_home: true` adds a quick-access card (groups link to their first page, and hidden pages are allowed).
 
 Models are plain Python classes:
 
@@ -137,9 +144,37 @@ class Product(models.Model):
   _name = 'stock.product'
 
   name = fields.StringField(name='Name', required=True)
-  price = fields.FloatField(name='Price')
+  standard_price = fields.FloatField(name='Cost', default=0.0)
+  price = fields.FloatField(name='Price', default=0.0)
   image = fields.ImageField(name='Image')
 ```
+
+Computed fields and server-side on-change use decorators:
+
+```python
+from jerp import fields, models
+from jerp.api import depends_on, on_change
+
+
+class SaleOrderLine(models.Model):
+  _name = 'sale.order.line'
+
+  quantity = fields.FloatField(name='Quantity', default=1.0)
+  price_unit = fields.FloatField(name='Unit price', default=0.0)
+  subtotal = fields.FloatField(name='Subtotal', compute='_compute_subtotal')
+
+  @on_change(['product_id'])
+  def _on_change_product_id(self):
+    for line in self:
+      line.price_unit = line.product_id.price if line.product_id else 0.0
+
+  @depends_on(['quantity', 'price_unit'])
+  def _compute_subtotal(self):
+    for line in self:
+      line.subtotal = (line.quantity or 0.0) * (line.price_unit or 0.0)
+```
+
+Records are recordsets: `search`/`browse` return a list-like `RecordSet`, many2one access returns the related record, and reverse one2many attributes (`order.lines`) are discovered automatically. In Python, `Model.new()` returns an in-memory record and `record.save()` writes it with its children in one transaction; with a token, `new` returns a server-side draft instead.
 
 Views are React components declared with the page DSL and registered by name:
 
@@ -179,11 +214,30 @@ Content-Type: application/json
 | `find` | `id`, `fields` | One record |
 | `create` | field values | Create |
 | `update` | `id`, `values` | Update |
-| `delete` | `ids` | Delete |
+| `delete` | `id` | Delete one record |
+| `delete_many` | `ids` | Delete several records |
 | `count` | `domain` | Count |
-| `fields` | — | Field descriptors |
+| `fields` | - | Field descriptors |
 
-Custom methods are exposed with `@jerp.http.api_expose`. Fields flagged `hide=True` (for example passwords) stay in the schema and remain writable, but are never returned by reads.
+Custom methods are exposed with `@jerp.http.api_expose`. Instance methods receive the record selected by `id` in the body (or `draft_id`); class/static methods receive the body as keyword arguments. Fields flagged `hide=True` (for example passwords) stay in the schema and remain writable, but are never returned by reads.
+
+### Draft API
+
+Forms and embedded tables keep unsaved state in `temp.model` drafts, grouped by a per-form token:
+
+| Method | Arguments | Purpose |
+| --- | --- | --- |
+| `new` | `token`, `values`, `reuse` | Create/reuse a row draft |
+| `edit` | `id`, `token`, `values` | Draft copy of an existing record |
+| `change` | `draft_id`, `values` | Apply values, run on-change + compute |
+| `drafts` | `token` | Every draft in a token |
+| `discard` | `draft_id` | Drop one draft |
+| `discard_all` | `token` | Drop all drafts in a token |
+| `remove` | `token`, `id` | Stage record deletion |
+| `save` | `draft_id` | Commit the token containing one draft |
+| `commit` | `token`, `parent_field`, `parent_id` | Atomic parent + child commit |
+
+`change` returns the current `values`, `dirty` fields, `errors`, `warnings`, `domains` and `version`. The client debounces changes by 800 ms and flushes immediately on Save/commit.
 
 ## Security model
 
@@ -201,7 +255,7 @@ Custom methods are exposed with `@jerp.http.api_expose`. Fields flagged `hide=Tr
 
 ## Contributing
 
-Issues and pull requests are welcome. Keep changes consistent with the existing layout: framework code in `jerp/`, business features in `modules/<name>/`, build tooling in `tools/`. Run `npm run typecheck` before opening a pull request.
+Issues and pull requests are welcome. Keep changes consistent with the existing layout: framework code in `jerp/`, business features in `modules/<name>/`, build tooling in `tools/`. Run `npm run typecheck`, `npm run build:views` and `python -m unittest discover -s tests` before opening a pull request.
 
 ## License and attribution
 

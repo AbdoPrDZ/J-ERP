@@ -198,13 +198,47 @@ class SchemaSyncer:
             f'WHERE {quote_ident(field.column_name)} IS NULL'
           )
         elif self._table_has_rows(cur, model._table):
-          raise ValueError(
-            f"Cannot add required field '{name}' to non-empty table "
-            f"'{model._table}' without a static default. Add default=... "
-            f"to the field or set required=False."
+          # A new required field on an existing table needs a value for the old
+          # rows. Use a neutral value where one is safe; otherwise refuse.
+          neutral = self._neutral_default(field)
+          if neutral is None:
+            raise ValueError(
+              f"Cannot add required field '{name}' to non-empty table "
+              f"'{model._table}' without a static default. Add default=... "
+              f"to the field or set required=False."
+            )
+          cur.execute(
+            f'UPDATE {quote_table(model._table)} '
+            f'SET {quote_ident(field.column_name)} = {neutral} '
+            f'WHERE {quote_ident(field.column_name)} IS NULL'
           )
 
         cur.execute(self.dialect.set_not_null_sql(model._table, field, True))
+
+  @staticmethod
+  def _neutral_default(field):
+    """A safe backfill value for a new required field, or ``None``."""
+
+    from jerp import fields as field_types
+
+    if getattr(field, 'comodel', None):
+      return None
+    if isinstance(
+      field,
+      (
+        field_types.FloatField,
+        field_types.NumericField,
+        field_types.IntegerField,
+      ),
+    ):
+      return '0'
+    if isinstance(field, (field_types.StringField, field_types.TextField)):
+      return "''"
+    if isinstance(field, field_types.BooleanField):
+      return 'FALSE'
+    if isinstance(field, field_types.DateField):
+      return 'CURRENT_DATE'
+    return None
 
   @staticmethod
   def _table_has_rows(cur, table: str) -> bool:
@@ -217,7 +251,17 @@ class SchemaSyncer:
       if info is None or field.auto_increment:
         continue
       if self._normalize(info) != field.column_type():
+        column = quote_ident(field.column_name)
+        # A default may be incompatible with the new type (for example text
+        # ``'{}'`` -> jsonb). Drop it before the cast, then restore the
+        # declared default if there is one.
+        cur.execute(
+          f'ALTER TABLE {quote_table(model._table)} '
+          f'ALTER COLUMN {column} DROP DEFAULT'
+        )
         cur.execute(self.dialect.alter_type_sql(model._table, field))
+        if field.sql_default() is not None:
+          cur.execute(self.dialect.set_default_sql(model._table, field))
 
   def _apply_nullability(self, cur, model, declared, columns) -> None:
     for name, field in declared.items():

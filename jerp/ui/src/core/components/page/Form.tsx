@@ -1,9 +1,16 @@
 import * as React from 'react';
 
-import { model, type DataClient } from '../../model';
+import { model, type DraftChange, type DraftRecord } from '../../model';
+import { clearDraftToken, draftToken, DraftQueue } from '../../draft';
 import { FieldHelp } from '../fields/FieldHelp';
 import { fieldRegistry } from '../fields/registry';
-import { RecordContext, FormContext, FormTabContext, usePage } from './context';
+import {
+  DraftContext,
+  RecordContext,
+  FormTabContext,
+  usePage,
+  type DraftQueueHandle,
+} from './context';
 import { validateValues, type FormErrors } from './validation';
 import { Action, isAction, type ActionProps } from './Action';
 import { autoModelFields, useModelFields } from './useModelFields';
@@ -174,10 +181,8 @@ export interface FormProps {
   title?: string;
   recordId?: number | string | null;
   readonly?: boolean;
-  /** Values applied when creating a new record (not used when editing). */
+  /** Values applied when creating a new draft. */
   defaults?: Record<string, unknown>;
-  /** Optional data source; defaults to the model API. */
-  client?: DataClient;
   children?: React.ReactNode;
   onSaved?: () => void;
 }
@@ -193,7 +198,6 @@ export function Form({
   recordId: recordIdProp,
   readonly,
   defaults,
-  client,
   children,
   onSaved,
 }: FormProps) {
@@ -223,62 +227,201 @@ export function Form({
     return map;
   }, [schema]);
 
+  const token = React.useMemo(
+    () =>
+      modelName ? draftToken(modelName, recordId, page?.name) : '',
+    [modelName, recordId, page?.name],
+  );
+  const [draft, setDraft] = React.useState<DraftRecord | null>(null);
   const [values, setValues] = React.useState<Record<string, unknown>>({});
   const [busy, setBusy] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [errors, setErrors] = React.useState<FormErrors>({});
-  const [refreshToken, setRefreshToken] = React.useState(0);
+  const [warnings, setWarnings] = React.useState<unknown[]>([]);
+  const [draftsVersion, setDraftsVersion] = React.useState(0);
   const [activeAction, setActiveAction] = React.useState<React.ReactElement<ActionProps> | null>(null);
-  const commitHandlers = React.useRef(
-    new Set<(recordId: number | string) => Promise<void>>(),
-  );
+  const queuesRef = React.useRef<Set<DraftQueueHandle>>(new Set());
+  const parentQueueRef = React.useRef<DraftQueue | null>(null);
+  const defaultsRef = React.useRef(defaults);
+  defaultsRef.current = defaults;
 
-  const refresh = React.useCallback(() => {
-    setRefreshToken((value) => value + 1);
+  const notifyDraftsChanged = React.useCallback(() => {
+    setDraftsVersion((value) => value + 1);
   }, []);
 
-  const registerCommit = React.useCallback(
-    (handler: (recordId: number | string) => Promise<void>) => {
-      commitHandlers.current.add(handler);
-      return () => {
-        commitHandlers.current.delete(handler);
-      };
-    },
-    [],
-  );
+  const registerQueue = React.useCallback((queue: DraftQueueHandle) => {
+    queuesRef.current.add(queue);
+    return () => {
+      queuesRef.current.delete(queue);
+      queue.dispose();
+    };
+  }, []);
+
+  const flushAll = React.useCallback(async () => {
+    for (const queue of Array.from(queuesRef.current)) {
+      await queue.flush();
+    }
+  }, []);
+
+  const discardAll = React.useCallback(async () => {
+    if (!modelName || !token) {
+      return;
+    }
+    await model(modelName).discardAllDrafts(token);
+    clearDraftToken(modelName, recordId, page?.name);
+    for (const queue of Array.from(queuesRef.current)) {
+      queue.dispose();
+    }
+    queuesRef.current.clear();
+    setDraft(null);
+    setValues({});
+    setErrors({});
+    setWarnings([]);
+  }, [modelName, token, recordId, page?.name]);
 
   React.useEffect(() => {
-    if (!active || !modelName) {
+    if (!active || !modelName || !token) {
       return;
     }
     let cancelled = false;
+    let queue: DraftQueue | null = null;
+    setLoading(true);
+    setError(null);
+
+    if (isReadonly) {
+      void (async () => {
+        try {
+          if (editing) {
+            const record = await model(modelName).find<Record<string, unknown>>(
+              recordId as number | string,
+            );
+            if (!cancelled) {
+              setValues(record ?? {});
+            }
+          } else if (!cancelled) {
+            setValues({});
+          }
+          if (!cancelled) {
+            setDraft(null);
+            setErrors({});
+            setWarnings([]);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setError((err as Error).message);
+          }
+        } finally {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
 
     void (async () => {
-      if (editing) {
-        try {
-          const source = client ?? model(modelName);
-          const record = await source.find<Record<string, unknown>>(
-            recordId as number,
-          );
-          if (!cancelled) {
-            setValues(record ?? {});
-            setErrors({});
-            setError(null);
-          }
-        } catch {
-          // ignore
+      try {
+        const client = model(modelName);
+        const loaded = editing
+          ? await client.editDraft(
+              recordId as number | string,
+              token,
+            )
+          : await client.newDraft(token, defaultsRef.current);
+        if (cancelled) {
+          return;
         }
-      } else if (!cancelled) {
-        setValues({});
+        setDraft(loaded);
+        setValues(loaded.values ?? {});
         setErrors({});
-        setError(null);
+        setWarnings([]);
+
+        queue = new DraftQueue(
+          modelName,
+          loaded.id,
+          (change: DraftChange) => {
+            const pending = queue?.pendingValues() ?? {};
+            setValues((current) => ({
+              ...current,
+              ...change.values,
+              ...pending,
+            }));
+            setErrors(change.errors ?? {});
+            setWarnings(change.warnings ?? []);
+            setDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    values: change.values,
+                    dirty: change.dirty,
+                    version: change.version,
+                  }
+                : current,
+            );
+            setDraftsVersion((value) => value + 1);
+          },
+          (err) => setError(err.message),
+        );
+        parentQueueRef.current = queue;
+        queuesRef.current.add(queue);
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      if (queue) {
+        queuesRef.current.delete(queue);
+        queue.dispose();
+      }
+      if (parentQueueRef.current === queue) {
+        parentQueueRef.current = null;
+      }
     };
-  }, [active, modelName, recordId, editing, refreshToken, client]);
+  }, [active, modelName, recordId, editing, token, isReadonly]);
+
+  React.useEffect(() => {
+    if (!active || !modelName || !token || !draft || draftsVersion === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await model(modelName).drafts(token);
+        const current = rows.find((row) => row.id === draft.id);
+        if (!current || cancelled) {
+          return;
+        }
+        const pending = parentQueueRef.current?.pendingValues() ?? {};
+        setValues((state) => ({ ...state, ...current.values, ...pending }));
+        setDraft((state) =>
+          state
+            ? {
+                ...state,
+                values: current.values,
+                dirty: current.dirty,
+                version: current.version,
+              }
+            : state,
+        );
+      } catch {
+        // The parent values stay as they are; the next change retries.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draftsVersion, active, modelName, token, draft?.id]);
 
   if (!active) {
     return null;
@@ -295,7 +438,7 @@ export function Form({
     });
 
   const submit = async () => {
-    if (!modelName || busy) {
+    if (!modelName || busy || loading || !draft) {
       return;
     }
 
@@ -324,31 +467,38 @@ export function Form({
     setBusy(true);
     setError(null);
     try {
-      const payload: Record<string, unknown> = {};
-      for (const field of fields) {
-        payload[field.props.name] = values[field.props.name];
+      await flushAll();
+      const combinedErrors: FormErrors = {};
+      for (const queue of Array.from(queuesRef.current)) {
+        Object.assign(combinedErrors, queue.lastErrors ?? {});
       }
-      for (const field of autoFields) {
-        payload[field.name] = values[field.name];
+      if (Object.keys(combinedErrors).length > 0) {
+        setErrors(combinedErrors);
+        setBusy(false);
+        return;
       }
-      const source = client ?? model(modelName);
-      if (editing) {
-        await source.update(recordId as number, payload);
-        for (const handler of Array.from(commitHandlers.current)) {
-          await handler(recordId as number | string);
-        }
-      } else {
-        const created = await source.create({
-          ...(defaults ?? {}),
-          ...payload,
-        });
-        const createdId = (created as { id?: number | string } | null)?.id;
-        if (createdId !== undefined && createdId !== null) {
-          for (const handler of Array.from(commitHandlers.current)) {
-            await handler(createdId);
-          }
-        }
+      await model(modelName).commitDrafts(token);
+      clearDraftToken(modelName, recordId, page?.name);
+      for (const queue of Array.from(queuesRef.current)) {
+        queue.dispose();
       }
+      queuesRef.current.clear();
+      saved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const discard = async () => {
+    if (!modelName || busy) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await discardAll();
       saved();
     } catch (err) {
       setError((err as Error).message);
@@ -367,6 +517,7 @@ export function Form({
       delete next[name];
       return next;
     });
+    parentQueueRef.current?.setField(name, value);
   };
 
   const renderField = (
@@ -455,8 +606,19 @@ export function Form({
     });
 
   return (
-    <FormContext.Provider
-      value={{ model: modelName, recordId, values, refresh, registerCommit }}
+    <DraftContext.Provider
+      value={{
+        token,
+        model: modelName,
+        draftId: draft?.id ?? null,
+        recordId: draft?.record_id ?? recordId,
+        values,
+        registerQueue,
+        flushAll,
+        discardAll,
+        draftsVersion,
+        notifyDraftsChanged,
+      }}
     >
       <RecordContext.Provider value={values}>
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
@@ -466,14 +628,24 @@ export function Form({
             {actions.length > 0 ? (
               <ActionMenu actions={actions} onSelect={setActiveAction} />
             ) : null}
+            {!isReadonly && draft ? (
+              <button
+                type="button"
+                className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5 disabled:opacity-40"
+                disabled={busy || loading}
+                onClick={() => void discard()}
+              >
+                Discard
+              </button>
+            ) : null}
             {!isReadonly ? (
               <button
                 type="button"
                 className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
-                disabled={busy}
+                disabled={busy || loading || !draft}
                 onClick={() => void submit()}
               >
-                {busy ? 'Saving…' : 'Save'}
+                {busy ? 'Saving…' : loading ? 'Loading…' : 'Save'}
               </button>
             ) : null}
           </div>
@@ -482,6 +654,14 @@ export function Form({
         {error ? (
           <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
+          </div>
+        ) : null}
+
+        {warnings.length > 0 ? (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {warnings.map((warning, index) => (
+              <p key={index}>{String(warning)}</p>
+            ))}
           </div>
         ) : null}
 
@@ -525,6 +705,6 @@ export function Form({
           })
         : null}
       </RecordContext.Provider>
-    </FormContext.Provider>
+    </DraftContext.Provider>
   );
 }

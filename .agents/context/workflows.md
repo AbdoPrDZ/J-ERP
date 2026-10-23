@@ -27,8 +27,11 @@ python app.py                 # backend on the configured port
 npm run dev                   # Vite dev server on 5173, proxies to the backend
 ```
 
-The dev plugin reads `GET /__endpoints` to build its proxies; `/` is handed to
-the backend so login/database redirects still work.
+The dev plugin reads `GET /__endpoints` to build its proxies and, for each HTML
+request, `GET /__modules` with the browser's `jerp_db` cookie so only the
+selected database's installed modules appear. With no database (or with the
+backend down) it exposes `core` only. Restart Vite after changing
+`vite.config.ts` or `tools/vite-plugin-jerp.mjs`.
 
 ## Build
 
@@ -59,15 +62,18 @@ match `^[a-z_][a-z0-9_]{0,62}$`.
    available.
 4. `core` cannot be uninstalled; modules with dependents cannot be uninstalled.
 5. Uninstall drops the module's tables — confirm with the user first.
+6. Menus and `add_to_home` entries are read from the database per request, so
+   they disappear after a refresh; restart the backend if Python modules changed.
 
 ## Add A Model
 
 1. Create `modules/<module>/models/<name>.py`:
-   subclass `jerp.models.Model`, set `_table`, declare `jerp.fields.*`.
+   subclass `jerp.models.Model`, set `_name`/`_table`, declare `jerp.fields.*`.
 2. Import it from `modules/<module>/models/__init__.py` (or the package
    `__init__`) so the metaclass registers it.
 3. Install or update the module so the schema is synchronized.
-4. Expose custom behavior with `@jerp.api_expose`; it is then callable at
+4. Expose custom behavior with `@jerp.api_expose` (instance methods receive the
+   record selected by `id`); it is callable at
    `POST /api/model/<model>/<method>`.
 
 ## Add A Field
@@ -76,27 +82,54 @@ Declare the field and update the module. The syncer adds the column and records
 it in `sys_field`. If the field replaces an existing column, the syncer may
 infer a rename; a genuinely removed field drops its column and its data.
 
+For Odoo-style fields:
+
+```python
+price = fields.FloatField(name='Unit price')
+subtotal = fields.FloatField(name='Subtotal', compute='_compute_subtotal')
+
+@depends_on(['quantity', 'price_unit'])
+def _compute_subtotal(self):
+  for line in self:
+    line.subtotal = (line.quantity or 0) * (line.price_unit or 0)
+
+@on_change(['product_id'])
+def _on_change_product_id(self):
+  for line in self:
+    line.price_unit = line.product_id.price if line.product_id else 0
+```
+
+Instance-style `@on_change` handlers and classmethod handlers returning a values
+dictionary are both supported. Computed fields are read-only in forms.
+
 ## Add A Page / View
 
 1. Add `modules/<module>/ui/src/views/<Name>.tsx` with a default-exported React
    component; import UI primitives from `@jerp/ui`.
 2. Build views (`npm run build:views` or module install/update). The view key is
-   `<module>.<snake_case_file>`.
+   `<module>.<snake_case_file>`; nested files such as `views/pages/Home.tsx` map
+   to `<module>.home`.
 3. Declare it in `configure.json` `routes`:
    `{"label": "…", "view": "<module>.<key>", "endpoint": "/optional", "sequence": n}`.
 4. Groups are entries with `label` + `children`; `hide` removes it from the menu;
    `auth: false` makes it public; `header: false` hides the shell header.
-5. Restart the backend so page routes are re-registered.
+5. Add `"add_to_home": true` (and an optional `description`) to show it in the
+   Home quick-access grid. Groups and hidden pages are supported.
+6. Restart the backend so page routes are re-registered. `build:views` fails if
+   a declared menu view has no matching view file.
 
 ## Verify Changes
 
-There is no test suite or lint configuration in the repository. At minimum:
+There is no linter configured. At minimum:
 
 - `npm run typecheck` for TypeScript changes.
 - Rebuild the UI (`npm run build`) after changing the shell/UI kit.
+- `npm run build:views` after view/manifest changes (it also validates that every
+  declared menu view has a file).
+- `python -m unittest discover -s tests` for the unit suite.
 - Start `python app.py` and exercise the affected page/API against a test
   database.
-- For backend-only edits, an import/compile check (e.g. `python -m compileall`)
-  catches syntax errors.
+- For backend-only edits, `python -m compileall jerp modules` catches syntax
+  errors.
 
 Do not commit or push; leave changes in the working tree until asked.

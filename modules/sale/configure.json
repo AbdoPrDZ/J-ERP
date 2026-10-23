@@ -6,13 +6,15 @@
   "routes": [
     {
       "label": "Sales",
-      "sequence": 25,
+      "sequence": 40,
       "children": [
         {
           "label": "Orders",
           "view": "sale.orders",
           "params": { "view": "list" },
-          "sequence": 1
+          "sequence": 1,
+          "add_to_home": true,
+          "description": "Quotes, confirmations and order lines."
         },
         {
           "label": "Order Lines",

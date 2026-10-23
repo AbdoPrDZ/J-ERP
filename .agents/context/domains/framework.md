@@ -17,19 +17,55 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
   `jerp_db` cookie / `X-JERP-DB` header.
 - `environment.db` is the active `Database`; `environment.registry()` is the
   active per-database `Registry`.
+- `Environment()` with no arguments is a standalone convenience: it loads
+  `jerp.config.json`, chooses `JERP_DATABASE`/the configured database/`J-ERP`/the
+  only database, and supports `env['model']` mapping access.
+- Menu/page collection reads installed module names from `sys_module` on each
+  render, so an uninstall in another process disappears after a refresh.
 
 ### Models and fields
 
 - `ModelMeta` collects `Field` descriptors, builds `_fields`, derives `_name`
   and `_table` from the class name, and registers concrete models globally.
 - Fields are descriptors: `record.name` reads the stored value; `Model.name`
-  returns the field metadata.
+  returns the field metadata. Field constructors accept the Odoo-style positional
+  form for relations/selections: `Many2oneField('sys.contact', name='Customer')`
+  and `SelectionField(STATE_SELECTION, name='Status')`.
 - `Model` provides raw CRUD (`create`, `search`, `browse`, `write`, `unlink`)
-  and API-facing helpers (`all`, `count`, `find`, `update`, `delete`, `fields`)
-  marked with `@api_expose`.
+  and API-facing helpers (`all`, `count`, `find`, `update`, `delete`,
+  `delete_many`, `fields`) marked with `@api_expose`.
 - Standard columns come from `BaseModel`: `id`, `created_at`, `updated_at`.
 - `_views` may restrict fields per standard view type; `_label` chooses the
   display label; `_virtual` excludes a model from schema syncing.
+- `search`/`browse` return `RecordSet`; many2one access returns a recordset of
+  the related record, while `read()` returns raw ids. Reverse one2many attributes
+  are derived from child many2one fields (`sale.order.lines` ←
+  `sale.order.line.order_id`).
+- Computed fields use `compute='_method'`; `@depends_on([...])` declares
+  dependencies. Values evaluate lazily and are recomputed/persisted on
+  create/write/draft commit/`save`.
+- `@on_change([...])` runs server-side on a pseudo-record. Instance handlers
+  mutate `self` (`for record in self`); assignments are diffed into changed
+  values. Legacy classmethod handlers returning a dict still work.
+- `Model.new()` (no token) creates an in-memory pseudo-record; `record.save()`
+  writes it and one2many children atomically. `new(token=...)` creates server
+  drafts for forms. `Model.save(draft_id)` remains the class/API form via a
+  dual-dispatch descriptor.
+- `create` accepts a positional values dict in Python and keyword values over
+  HTTP; missing required text values are stored as `''`, and numeric new-record
+  defaults are `0`.
+
+### Draft records
+
+- `temp.model` stores server-side drafts for forms/tables. `jerp.models`
+  implements `new`, `edit`, `change`, `drafts`, `discard`, `discard_all`,
+  `remove`, `save` and `commit`.
+- Draft `data` is a JSON text snapshot; `dirty` is JSONB. `change` runs on-change
+  and compute, persists the new values, and refreshes computed values on parent
+  drafts. `commit` writes the whole token in a single transaction, resolving
+  `draft:<id>` relations and checking `base_stamp`.
+- Parent forms and `FormTable` rows share a token; child rows use
+  `reuse: false` (`new` with `reuse: false`) so multiple rows can be added.
 
 ### Registry and module lifecycle
 
@@ -57,9 +93,15 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
 - Pages are declared in module manifests, not code. `jerp.views` collects pages,
   menus and the view map; `jerp.routes` binds page endpoints to a handler that
   enforces the login guard and renders the SPA shell.
-- `ViewRenderer` injects the import map and JSON payloads into the built shell.
-  `<!--jerp:head-->` and `<!--jerp:body-->` markers in `public/index.html` are
-  required for this to work.
+- Route options include `add_to_home` and `description`; `collect_home_pages`
+  builds the Home quick-access payload (hidden entries and groups included) from
+  installed modules only.
+- `ViewRenderer` injects the import map and JSON payloads into the built shell
+  (`__JERP_VIEWS__`, `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_MENUS__`,
+  `__JERP_HOME__`, `__JERP_CONTEXT__`). `<!--jerp:head-->` and
+  `<!--jerp:body-->` markers in `public/index.html` are required for this.
+- In dev, `tools/vite-plugin-jerp.mjs` builds the same payload from disk but
+  filters modules using `GET /__modules` and the `jerp_db` cookie.
 
 ### Uploads
 

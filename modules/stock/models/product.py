@@ -17,13 +17,11 @@ class Product(models.Model):
   )
   standard_price = fields.FloatField(
     name='Standard Price',
-    default=0.0,
     required=True,
     help='Internal cost price used for valuation.',
   )
   price = fields.FloatField(
     name='Price',
-    default=0.0,
     required=True,
     help='Default selling price before taxes.',
   )

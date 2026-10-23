@@ -34,6 +34,7 @@ VIEWS_PREFIX = '/views/'
 ASSET_PREFIX = '/__assets/'
 STORAGE_PREFIX = '/__storage/'
 ENDPOINTS_PATH = '/__endpoints'
+MODULES_PATH = '/__modules'
 
 
 class Application:
@@ -72,6 +73,11 @@ class Application:
     # The dev server reads this to build its proxies (no hardcoded prefixes).
     if path == ENDPOINTS_PATH:
       return self._endpoints()
+
+    # The dev server uses this to hide menus for modules that are not installed
+    # in the database selected by the browser cookie.
+    if path == MODULES_PATH:
+      return self._modules(request)
 
     if path == self.api_prefix or path.startswith(self.api_prefix + '/'):
       return self._dispatch(request, strip=len(self.api_prefix))
@@ -116,6 +122,21 @@ class Application:
         STORAGE_PREFIX.rstrip('/'),
       ],
     })
+
+  def _modules(self, request: Request) -> Response:
+    """Modules installed in the database selected for this request."""
+
+    from jerp.env import Environment
+
+    active = request.database()
+    if not active:
+      return json({'modules': []})
+    try:
+      registry = Environment.instance.registry(active)
+      modules = list(registry.module_manager.installed())
+    except Exception:
+      modules = []
+    return json({'modules': modules})
 
   def _dispatch(self, request: Request, strip: int = 0) -> Response:
     endpoint = request.path[strip:] if strip else request.path

@@ -26,6 +26,5 @@ class Language(models.Model):
   )
   is_default = fields.BooleanField(
     name='Default',
-    default=False,
     help='Use this language as the default value of multi-language fields.',
   )

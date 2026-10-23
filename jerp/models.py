@@ -12,14 +12,80 @@ sources installed in a database into one built model class per model name.
 
 from __future__ import annotations
 
+import inspect
+import json
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 
 from jerp import fields
 from jerp.api import api_expose, is_exposed
 from jerp.dialect import quote_ident, quote_table
 from jerp.refs import model_module, resolve_key
+
+
+class RecordSet(list):
+  """A list of records that also behaves like an Odoo recordset.
+
+  ``search`` and ``browse`` return this type. It is a real ``list`` so the
+  existing code that indexes, iterates or truth-tests the result keeps working.
+  """
+
+  def is_one(self):
+    if len(self) != 1:
+      raise ValueError(
+        f'Expected exactly one record, got {len(self)}.'
+      )
+    return self[0]
+
+  ensure_one = is_one
+
+  def __getattr__(self, name):
+    if name.startswith('_'):
+      raise AttributeError(name)
+    if len(self) != 1:
+      raise AttributeError(
+        f'Field "{name}" can only be read on a single record.'
+      )
+    return getattr(self[0], name)
+
+  def __setattr__(self, name, value):
+    if name.startswith('_'):
+      return super().__setattr__(name, value)
+    if len(self) != 1:
+      raise AttributeError(
+        f'Field "{name}" can only be written on a single record.'
+      )
+    return setattr(self[0], name, value)
+
+  def __str__(self):
+    return ', '.join(str(record) for record in self)
+
+
+class dualmethod:
+  """Descriptor dispatching to a class method or an instance method.
+
+  Used for ``save``: ``Model.save(draft_id)`` keeps the exposed API behaviour,
+  while ``record.save()`` saves an in-memory new record.
+  """
+
+  def __init__(self, instance_func, class_func, exposed=None):
+    self.instance_func = instance_func
+    if isinstance(class_func, classmethod):
+      class_func = class_func.__func__
+    self.class_func = class_func
+    self._jerp_exposed = (
+      is_exposed(class_func) if exposed is None else bool(exposed)
+    )
+    self.__name__ = getattr(class_func, '__name__', 'save')
+    self.__doc__ = getattr(class_func, '__doc__', None)
+
+  def __get__(self, obj, cls=None):
+    if obj is None:
+      return self.class_func.__get__(cls, cls)
+    return self.instance_func.__get__(obj, cls)
+
 
 
 def to_table_name(class_name: str) -> str:
@@ -299,6 +365,233 @@ class BaseModel(metaclass=ModelMeta):
     help='When this record was last modified.',
   )
 
+  # --- recordset behaviour ------------------------------------------------
+
+  def __iter__(self):
+    yield self
+
+  def __len__(self):
+    return 1
+
+  def __bool__(self):
+    return True
+
+  def is_one(self):
+    return self
+
+  ensure_one = is_one
+
+  def __str__(self):
+    try:
+      display = type(self).display_name(self)
+    except Exception:
+      display = None
+    return display or f'{type(self)._name}#{self._values.get("id")}'
+
+  @classmethod
+  def _reverse_relations(cls) -> dict:
+    """Map one2many attribute names to ``(child_model, inverse_field)``.
+
+    The relation is derived from many2one fields pointing at this model. For
+    example ``sale.order.line.order_id`` also becomes ``sale.order.lines``.
+    """
+
+    cache = cls.__dict__.get('_reverse_relation_cache')
+    if cache is not None:
+      return cache
+
+    cache = {}
+    loaded = False
+    try:
+      from jerp.env import Environment
+
+      registry = Environment.instance.registry()
+      models = list(registry.models.items())
+      loaded = bool(getattr(registry, 'ready', False))
+    except Exception:
+      models = []
+
+    for other_name, other in models:
+      if other is cls:
+        continue
+      for field_name, field in other._fields.items():
+        if getattr(field, 'comodel', None) != cls._name:
+          continue
+        suffix = other_name.split('.')[-1]
+        for candidate in (f'{suffix}s', f'{suffix}_ids'):
+          if candidate not in cls._fields:
+            cache.setdefault(candidate, (other, field_name))
+        if field_name.endswith('_id'):
+          candidate = f'{field_name[:-3]}s'
+          if candidate not in cache and candidate not in cls._fields:
+            cache[candidate] = (other, field_name)
+
+    if loaded:
+      cls._reverse_relation_cache = cache
+    return cache
+
+  def _one2many_records(self, name, child_model, inverse_name):
+    result = []
+    base_id = None
+    if getattr(self, '_persisted', False):
+      base_id = self._values.get('id')
+    else:
+      base_id = getattr(self, '_record_id', None)
+
+    drafts = []
+    by_record = {}
+    if base_id:
+      rows = child_model.search([(inverse_name, '=', base_id)], order='id')
+      token = getattr(self, '_token', None)
+      if token:
+        try:
+          Temp = child_model._draft_model()
+          drafts = Temp.search(
+            [
+              ('token', '=', token),
+              ('model', '=', child_model._name),
+            ],
+            order='id',
+          )
+        except Exception:
+          drafts = []
+        for draft in drafts:
+          if draft.record_id:
+            by_record[draft.record_id] = draft
+      for row in rows:
+        draft = by_record.get(row.id)
+        if draft is not None:
+          if draft.state == 'delete':
+            continue
+          if draft.state == 'update':
+            values = dict(row._values)
+            values.update(child_model._draft_load(draft.data))
+            result.append(
+              child_model._pseudo_record(
+                values,
+                draft_id=draft.id,
+                token=draft.token,
+                record_id=row.id,
+                state='update',
+              )
+            )
+            continue
+        result.append(row)
+
+    if getattr(self, '_is_new', False):
+      result.extend(self.__dict__.get('_one2many_cache', {}).get(name, []))
+    if getattr(self, '_draft_id', None):
+      token = getattr(self, '_token', None)
+      if token:
+        try:
+          Temp = child_model._draft_model()
+          drafts = Temp.search(
+            [
+              ('token', '=', token),
+              ('model', '=', child_model._name),
+            ],
+            order='id',
+          )
+        except Exception:
+          drafts = []
+        for draft in drafts:
+          if draft.state != 'create':
+            continue
+          data = child_model._draft_load(draft.data)
+          if data.get(inverse_name) != f'draft:{self._draft_id}':
+            continue
+          result.append(child_model._draft_record_from_row(draft))
+
+    return RecordSet(result)
+
+  def _assign_one2many(self, name, commands, child_model, inverse_name):
+    if commands is None:
+      commands = []
+    if isinstance(commands, (list, tuple)) and commands and not isinstance(
+      commands[0], (list, tuple)
+    ):
+      commands = [commands]
+
+    if not getattr(self, '_persisted', False):
+      cache = self.__dict__.setdefault('_one2many_cache', {})
+      children = cache.setdefault(name, [])
+      for command in commands:
+        if not isinstance(command, (list, tuple)) or not command:
+          continue
+        operation = command[0]
+        if operation == 0:
+          values = dict(command[2] or {})
+          values[inverse_name] = self
+          children.append(child_model._new_record(values))
+        elif operation == 1:
+          record_id, values = command[1], dict(command[2] or {})
+          for child in children:
+            if str(child._values.get('id')) == str(record_id) or str(
+              getattr(child, '_record_id', None)
+            ) == str(record_id):
+              for field_name, value in values.items():
+                setattr(child, field_name, value)
+        elif operation == 2:
+          record_id = command[1]
+          children[:] = [
+            child
+            for child in children
+            if not (
+              str(child._values.get('id')) == str(record_id)
+              or str(getattr(child, '_record_id', None)) == str(record_id)
+            )
+          ]
+        elif operation == 6:
+          keep = {str(value) for value in (command[2] or [])}
+          children[:] = [
+            child
+            for child in children
+            if str(child._values.get('id')) in keep
+          ]
+      return
+
+    for command in commands:
+      if not isinstance(command, (list, tuple)) or not command:
+        continue
+      operation = command[0]
+      if operation == 0:
+        values = dict(command[2] or {})
+        values[inverse_name] = self._values['id']
+        child_model.create(**values)
+      elif operation == 1:
+        records = child_model.browse(command[1])
+        if records:
+          records[0].write(dict(command[2] or {}))
+      elif operation == 2:
+        records = child_model.browse(command[1])
+        if records:
+          records[0].unlink()
+      elif operation == 6:
+        keep = {str(value) for value in (command[2] or [])}
+        for record in child_model.search([(inverse_name, '=', self._values['id'])]):
+          if str(record.id) not in keep:
+            record.unlink()
+
+  def __getattr__(self, name):
+    if name.startswith('_'):
+      raise AttributeError(name)
+    relation = type(self)._reverse_relations().get(name)
+    if relation is not None:
+      return self._one2many_records(name, *relation)
+    raise AttributeError(
+      f"'{type(self)._name}' has no attribute '{name}'"
+    )
+
+  def __setattr__(self, name, value):
+    if name.startswith('_') or name in type(self)._fields:
+      object.__setattr__(self, name, value)
+      return
+    relation = type(self)._reverse_relations().get(name)
+    if relation is not None:
+      self._assign_one2many(name, value, *relation)
+      return
+    object.__setattr__(self, name, value)
+
   @classmethod
   def field_schema(cls, only=None) -> list[dict]:
     """Descriptors the client uses to render forms/views.
@@ -322,6 +615,8 @@ class BaseModel(metaclass=ModelMeta):
         'readonly': bool(field.readonly),
         'hide': bool(field.hide),
       }
+      if getattr(field, 'compute', None):
+        entry['compute'] = True
       if name in getattr(cls, '_extension_fields', ()):
         entry['extension'] = True
       if field.help:
@@ -765,6 +1060,30 @@ class Model(BaseModel):
   def _instantiate(cls, row: dict):
     obj = cls.__new__(cls)
     obj._values = cls._row_to_values(row)
+    obj._persisted = True
+    obj._is_new = False
+    obj._pseudo = False
+    obj._draft_id = None
+    obj._draft_state = None
+    obj._record_id = obj._values.get('id')
+    obj._token = None
+    obj._one2many_cache = {}
+    obj._computing = set()
+    return obj
+
+  @classmethod
+  def _new_base(cls, values, persisted=False):
+    obj = cls.__new__(cls)
+    obj._values = dict(values or {})
+    obj._persisted = persisted
+    obj._is_new = not persisted
+    obj._pseudo = not persisted
+    obj._draft_id = None
+    obj._draft_state = None
+    obj._record_id = obj._values.get('id') if persisted else None
+    obj._token = None
+    obj._one2many_cache = {}
+    obj._computing = set()
     return obj
 
   @classmethod
@@ -789,13 +1108,28 @@ class Model(BaseModel):
 
       column = quote_ident(cls._column(name))
       operator = str(operator).lower()
+      field = cls._fields.get(name)
+
+      def scalar(item):
+        if isinstance(item, RecordSet):
+          return item[0]._values.get('id') if item else None
+        if isinstance(item, BaseModel):
+          return (
+            item._values.get('id')
+            if not getattr(item, '_is_new', False)
+            else None
+          )
+        return item
+
+      if field is not None and getattr(field, 'comodel', None):
+        value = scalar(value)
 
       if operator in ('is null', 'is not null'):
         clauses.append(f'{column} {operator.upper()}')
         continue
 
       if operator in ('in', 'not in'):
-        values = list(value or [])
+        values = [scalar(item) for item in (value or [])]
         if not values:
           clauses.append('TRUE' if operator == 'in' else 'FALSE')
           continue
@@ -841,16 +1175,54 @@ class Model(BaseModel):
         return cls._now()
     if field.default is not None and callable(field.default):
       return field.default()
-    return field.default
+    value = field.default
+    if (
+      value is None
+      and getattr(field, 'comodel', None) is None
+      and not field.auto_increment
+      and isinstance(
+        field,
+        (fields.FloatField, fields.NumericField, fields.IntegerField),
+      )
+    ):
+      return 0
+    return value
 
   # --- CRUD ---------------------------------------------------------------
 
   @classmethod
+  def _coerce_write_value(cls, name, value):
+    if isinstance(value, RecordSet):
+      value = value[0] if value else None
+    field = cls._fields.get(name)
+    if field is None:
+      return value
+    if getattr(field, 'comodel', None):
+      if isinstance(value, BaseModel):
+        if getattr(value, '_draft_id', None):
+          return f'draft:{value._draft_id}'
+        if getattr(value, '_is_new', False):
+          return value
+        return value._values.get('id')
+      if isinstance(value, dict):
+        return value.get('id')
+      return value
+    if isinstance(value, BaseModel):
+      return value._values.get('id')
+    return value
+
+  @classmethod
   @api_expose
-  def create(cls, **values):
-    external_key = values.pop('_key', None)
-    ref_module = values.pop('_ref_module', None)
-    values, translations = cls._split_multi_lang_values(values)
+  def create(cls, values=None, **kwargs):
+    payload = dict(values or {})
+    payload.update(kwargs)
+    external_key = payload.pop('_key', None)
+    ref_module = payload.pop('_ref_module', None)
+    payload = {
+      name: cls._coerce_write_value(name, value)
+      for name, value in payload.items()
+    }
+    payload, translations = cls._split_multi_lang_values(payload)
     db = cls._database()
     columns: list[str] = []
     placeholders: list[str] = []
@@ -860,10 +1232,27 @@ class Model(BaseModel):
     for name, field in cls._fields.items():
       if field.auto_increment:
         continue
-      if name in values:
-        raw = field.convert(values[name])
+      if name in payload:
+        raw = payload[name]
+        if isinstance(raw, BaseModel) and getattr(raw, '_is_new', False):
+          raw = raw.save()
+        if (
+          raw is None
+          and field.required
+          and isinstance(field, (fields.StringField, fields.TextField))
+        ):
+          raw = ''
+        raw = field.convert(raw)
       else:
         raw = cls._auto_value(field, creating=True)
+        if (
+          raw is None
+          and field.required
+          and isinstance(field, (fields.StringField, fields.TextField))
+        ):
+          # Python callers commonly omit required text fields; an empty string
+          # satisfies the column while the UI still validates user input.
+          raw = ''
       columns.append(quote_ident(field.column_name))
       placeholders.append('%s')
       params.append(field.to_db(raw))
@@ -874,15 +1263,15 @@ class Model(BaseModel):
       f'({", ".join(columns)}) VALUES ({", ".join(placeholders)}) RETURNING id'
     )
     row = db.fetchone(sql, params)
-    obj = cls.__new__(cls)
-    obj._values = stored
-    obj._values['id'] = row['id']
+    obj = cls._new_base({**stored, 'id': row['id']}, persisted=True)
 
     if getattr(cls, '_track_refs', True) and not getattr(cls, '_virtual', False):
       cls.register_ref(obj.id, external_key, module=ref_module)
 
     for field_name, lang_values in translations.items():
       cls.set_translations(obj.id, field_name, lang_values)
+
+    obj._recompute_computed()
     return obj
 
   @classmethod
@@ -900,7 +1289,7 @@ class Model(BaseModel):
     if offset is not None:
       sql += f' OFFSET {int(offset)}'
     rows = db.fetchall(sql, params)
-    return [cls._instantiate(row) for row in rows]
+    return RecordSet(cls._instantiate(row) for row in rows)
 
   @classmethod
   def browse(cls, ids):
@@ -911,19 +1300,33 @@ class Model(BaseModel):
   def read(self, field_names=None) -> dict:
     if field_names is None:
       field_names = list(self._fields.keys())
-    return {name: self._values.get(name) for name in field_names}
+    result = {}
+    for name in field_names:
+      field = self._fields.get(name)
+      if field is not None and getattr(field, 'compute', None):
+        result[name] = self._compute_field(name)
+      else:
+        result[name] = self._values.get(name)
+    return result
 
   def write(self, values) -> bool:
     db = self._database()
-    values, translations = type(self)._split_multi_lang_values(dict(values))
+    payload = {
+      name: type(self)._coerce_write_value(name, value)
+      for name, value in dict(values).items()
+    }
+    payload, translations = type(self)._split_multi_lang_values(payload)
     sets: list[str] = []
     params: list = []
     now = self._now()
 
-    for name, value in values.items():
+    for name, value in payload.items():
       field = self._fields.get(name)
       if field is None:
         raise ValueError(f"Unknown field '{name}' on model '{self._name}'")
+      if isinstance(value, BaseModel) and getattr(value, '_is_new', False):
+        value = value.save()
+        payload[name] = value._values.get('id') if isinstance(value, BaseModel) else value
       sets.append(f'{quote_ident(field.column_name)} = %s')
       params.append(field.to_db(field.convert(value)))
 
@@ -938,13 +1341,14 @@ class Model(BaseModel):
     params.append(self._values['id'])
     sql = f'UPDATE {quote_table(self._table)} SET {", ".join(sets)} WHERE {quote_ident(self._fields["id"].column_name)} = %s'
     rowcount = db.execute(sql, params)
-    self._values.update(values)
+    self._values.update(payload)
     if 'updated_at' in self._fields and rowcount > 0:
       self._values['updated_at'] = now
 
     if rowcount > 0:
       for field_name, lang_values in translations.items():
         type(self).set_translations(self._values['id'], field_name, lang_values)
+      self._recompute_computed()
     return rowcount > 0
 
   def unlink(self) -> bool:
@@ -956,6 +1360,1064 @@ class Model(BaseModel):
     if rowcount > 0:
       type(self)._delete_translations(self._values['id'])
     return rowcount > 0
+
+  # --- computed fields ----------------------------------------------------
+
+  @classmethod
+  def _computed_field_names(cls) -> list[str]:
+    return [
+      name
+      for name, field in cls._fields.items()
+      if getattr(field, 'compute', None)
+    ]
+
+  @classmethod
+  def _compute_dependencies(cls, name: str) -> tuple:
+    field = cls._fields.get(name)
+    compute = getattr(field, 'compute', None)
+    if not compute:
+      return ()
+    if callable(compute):
+      return tuple(getattr(compute, '_jerp_depends', ()) or ())
+    method = getattr(cls, str(compute), None)
+    target = getattr(method, '__func__', method)
+    return tuple(getattr(target, '_jerp_depends', ()) or ())
+
+  def _compute_field(self, name: str):
+    field = self._fields.get(name)
+    compute = getattr(field, 'compute', None)
+    if not compute:
+      return self._values.get(name)
+
+    computing = self.__dict__.setdefault('_computing', set())
+    if name in computing:
+      return self._values.get(name)
+    computing.add(name)
+    try:
+      if callable(compute):
+        compute(self)
+      else:
+        handler = getattr(self, str(compute), None)
+        if handler is not None:
+          handler()
+    except Exception:
+      # A missing optional value must not make the whole form unusable. The
+      # stored/default value is returned instead.
+      import logging
+
+      logging.getLogger(__name__).debug(
+        'Compute error for %s.%s', type(self)._name, name, exc_info=True
+      )
+      stored = self._values.get(name)
+      if stored is None and isinstance(
+        field, (fields.FloatField, fields.NumericField, fields.IntegerField)
+      ):
+        stored = 0
+      return stored
+    finally:
+      computing.discard(name)
+    return self._values.get(name)
+
+  def _compute_all(self):
+    for name in type(self)._computed_field_names():
+      self._compute_field(name)
+
+  def _write_computed(self, values: dict) -> None:
+    if not values or not getattr(self, '_persisted', False):
+      self._values.update(values)
+      return
+    db = self._database()
+    sets = []
+    params = []
+    for name, value in values.items():
+      field = self._fields.get(name)
+      if field is None:
+        continue
+      sets.append(f'{quote_ident(field.column_name)} = %s')
+      params.append(field.to_db(field.convert(value)))
+    if not sets:
+      self._values.update(values)
+      return
+    params.append(self._values['id'])
+    sql = (
+      f'UPDATE {quote_table(self._table)} SET {", ".join(sets)} '
+      f'WHERE {quote_ident(self._fields["id"].column_name)} = %s'
+    )
+    db.execute(sql, params)
+    self._values.update(values)
+
+  def _recompute_computed(self, write: bool = True) -> None:
+    names = type(self)._computed_field_names()
+    if not names:
+      return
+    values = {name: self._compute_field(name) for name in names}
+    if write and getattr(self, '_persisted', False):
+      self._write_computed(values)
+    else:
+      self._values.update(values)
+
+  # --- draft records ------------------------------------------------------
+
+  _DRAFT_STANDARD_FIELDS = ('id', 'created_at', 'updated_at')
+
+  @classmethod
+  def _draft_model(cls):
+    from jerp.env import Environment
+
+    registry = Environment.instance.registry()
+    Temp = registry.get('temp.model')
+    if Temp is None:
+      raise RuntimeError("The 'temp.model' draft model is not installed.")
+    return Temp
+
+  @staticmethod
+  def _draft_token(token=None) -> str:
+    value = str(token or '').strip()
+    return value or str(uuid4())
+
+  @classmethod
+  def _draft_json(cls, values: dict) -> dict:
+    def clean(value):
+      if isinstance(value, BaseModel):
+        if getattr(value, '_draft_id', None):
+          return f'draft:{value._draft_id}'
+        return value._values.get('id')
+      if isinstance(value, (datetime, date)):
+        return value.isoformat()
+      if isinstance(value, Decimal):
+        return float(value)
+      if isinstance(value, dict):
+        return {key: clean(item) for key, item in value.items()}
+      if isinstance(value, (list, tuple)):
+        return [clean(item) for item in value]
+      return value
+
+    return {name: clean(value) for name, value in (values or {}).items()}
+
+  @staticmethod
+  def _draft_load(text) -> dict:
+    if isinstance(text, dict):
+      return text
+    if text is None:
+      return {}
+    if not isinstance(text, str):
+      try:
+        return dict(text)
+      except (TypeError, ValueError):
+        return {}
+    try:
+      data = json.loads(text or '{}')
+    except (TypeError, ValueError):
+      data = {}
+    return data if isinstance(data, dict) else {}
+
+  @classmethod
+  def _draft_filter_values(cls, values) -> dict:
+    result = {}
+    for name, value in (values or {}).items():
+      field = cls._fields.get(name)
+      if (
+        field is None
+        or name in cls._DRAFT_STANDARD_FIELDS
+        or field.readonly
+        or field.hide
+        or getattr(field, 'compute', None)
+      ):
+        continue
+      result[name] = cls._coerce_write_value(name, value)
+    return cls._draft_json(result)
+
+  @classmethod
+  def _draft_defaults(cls) -> dict:
+    values = {}
+    for name, field in cls._fields.items():
+      if (
+        name in cls._DRAFT_STANDARD_FIELDS
+        or field.auto_increment
+        or field.hide
+        or getattr(field, 'compute', None)
+      ):
+        continue
+      value = cls._auto_value(field, creating=True)
+      if value is not None:
+        values[name] = value
+    return cls._draft_json(values)
+
+  @classmethod
+  def _draft_record_values(cls, record) -> dict:
+    names = [
+      name
+      for name in cls._fields
+      if name not in cls._DRAFT_STANDARD_FIELDS
+      and not cls._fields[name].hide
+    ]
+    return cls._draft_json(record.read(names))
+
+  @classmethod
+  def _draft_dict(cls, draft) -> dict:
+    data = cls._draft_load(draft.data)
+    if draft.state != 'delete':
+      try:
+        record = cls._draft_record_from_row(draft)
+        record._compute_all()
+        for name in cls._computed_field_names():
+          if name in record._values:
+            data[name] = record._values[name]
+      except Exception:
+        pass
+    return {
+      'id': draft.id,
+      'draft_id': draft.id,
+      'model': draft.model,
+      'record_id': draft.record_id,
+      'state': draft.state,
+      'values': data,
+      'dirty': cls._draft_load(draft.dirty),
+      'version': int(draft.version or 0),
+      'base_stamp': (
+        draft.base_stamp.isoformat() if draft.base_stamp else None
+      ),
+    }
+
+  @classmethod
+  def _pseudo_record(
+    cls,
+    values,
+    draft_id=None,
+    token=None,
+    record_id=None,
+    state=None,
+  ):
+    obj = cls._new_base(values, persisted=False)
+    obj._pseudo = True
+    obj._is_new = record_id is None or state == 'create'
+    obj._draft_id = draft_id
+    obj._draft_state = state
+    obj._record_id = record_id
+    obj._token = token
+    return obj
+
+  @classmethod
+  def _draft_record_from_row(cls, row):
+    data = cls._draft_load(row.data)
+    return cls._pseudo_record(
+      data,
+      draft_id=row.id,
+      token=row.token,
+      record_id=row.record_id,
+      state=row.state,
+    )
+
+  @classmethod
+  def _draft_record(cls, draft_id):
+    try:
+      Temp = cls._draft_model()
+    except Exception:
+      return None
+    rows = Temp.browse(draft_id)
+    if not rows:
+      return None
+    row = rows[0]
+    if row.model != cls._name:
+      return None
+    return cls._draft_record_from_row(row)
+
+  @classmethod
+  def _new_record(cls, values=None):
+    data = cls._draft_defaults()
+    incoming = dict(values or {})
+    one2many = {}
+    relation_names = cls._reverse_relations()
+    for name, value in list(incoming.items()):
+      if name in relation_names:
+        one2many[name] = incoming.pop(name)
+        continue
+      field = cls._fields.get(name)
+      if field is None or name in cls._DRAFT_STANDARD_FIELDS:
+        incoming.pop(name, None)
+        continue
+      incoming[name] = cls._coerce_write_value(name, value)
+    for name, value in incoming.items():
+      data[name] = (
+        value
+        if isinstance(value, BaseModel)
+        else cls._draft_json({name: value})[name]
+      )
+
+    obj = cls._pseudo_record(data, state='create')
+    obj._is_new = True
+    obj._pseudo = True
+
+    if incoming:
+      cls._run_on_change(
+        data,
+        list(incoming),
+        record=obj,
+      )
+      obj._values.update(data)
+
+    for name, commands in one2many.items():
+      obj._assign_one2many(name, commands, *relation_names[name])
+
+    obj._compute_all()
+    return obj
+
+  @classmethod
+  def _run_on_change(
+    cls,
+    values: dict,
+    changed_fields,
+    record_id=None,
+    draft_id=None,
+    token=None,
+    record=None,
+  ) -> dict:
+    """Run every on-change handler triggered by ``changed_fields``.
+
+    Handlers may be instance methods (Odoo style: they mutate ``self``) or
+    classmethods returning a values dictionary. Computed fields are evaluated
+    afterwards and included in ``values``.
+    """
+
+    handlers: dict[str, list[tuple[str, object, str]]] = {}
+    for method_name in dir(cls):
+      try:
+        static = inspect.getattr_static(cls, method_name)
+      except Exception:
+        continue
+      if isinstance(static, classmethod):
+        kind = 'class'
+        target = static.__func__
+      elif isinstance(static, staticmethod):
+        kind = 'static'
+        target = static.__func__
+      else:
+        kind = 'instance'
+        target = static
+      declared = getattr(target, '_jerp_on_change_fields', None)
+      if not declared:
+        continue
+      for field_name in declared:
+        if field_name in cls._fields:
+          handlers.setdefault(field_name, []).append(
+            (method_name, static, kind)
+          )
+
+    if record is None:
+      record = cls._pseudo_record(
+        values,
+        draft_id=draft_id,
+        token=token,
+        record_id=record_id,
+        state='create' if record_id is None else 'update',
+      )
+    record._values.update(values)
+
+    warnings = []
+    errors = {}
+    domains = {}
+
+    def apply_result(result):
+      if not isinstance(result, dict):
+        return
+      if any(
+        key in result for key in ('values', 'warnings', 'errors', 'domains')
+      ):
+        new_values = result.get('values') or {}
+        warnings.extend(result.get('warnings') or [])
+        errors.update(result.get('errors') or {})
+        domains.update(result.get('domains') or {})
+      else:
+        new_values = result
+      for name, value in new_values.items():
+        if name not in cls._fields or name in cls._DRAFT_STANDARD_FIELDS:
+          continue
+        value = cls._coerce_write_value(name, value)
+        if values.get(name) != value:
+          values[name] = cls._draft_json({name: value})[name]
+          record._values[name] = value
+          if name not in visited:
+            queue.append(name)
+
+    queue = [
+      name for name in changed_fields if name in cls._fields
+    ]
+    visited = set()
+    executed = set()
+    steps = 0
+
+    while queue and steps < 100:
+      steps += 1
+      field_name = queue.pop(0)
+      if field_name in visited:
+        continue
+      visited.add(field_name)
+
+      for method_name, static, kind in handlers.get(field_name, []):
+        if method_name in executed:
+          continue
+        executed.add(method_name)
+
+        kwargs = {}
+        method = getattr(cls, method_name)
+        try:
+          parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+          parameters = {}
+        if 'record_id' in parameters:
+          kwargs['record_id'] = record_id
+        if 'draft_id' in parameters:
+          kwargs['draft_id'] = draft_id
+
+        if kind in ('class', 'static'):
+          apply_result(method(dict(values), **kwargs))
+          continue
+
+        before = dict(record._values)
+        result = getattr(record, method_name)()
+        apply_result(result)
+        for name in cls._fields:
+          if name in cls._DRAFT_STANDARD_FIELDS:
+            continue
+          value = record._values.get(name)
+          if before.get(name) != value:
+            values[name] = cls._draft_json({name: value})[name]
+            if name not in visited:
+              queue.append(name)
+
+    record._values.update(values)
+    record._compute_all()
+    for name in cls._computed_field_names():
+      if name in record._values:
+        values[name] = cls._draft_json({name: record._values[name]})[name]
+
+    return {
+      'warnings': warnings,
+      'errors': errors,
+      'domains': domains,
+    }
+
+  @classmethod
+  def resolve_draft(cls, value, model_name=None) -> dict | None:
+    """Resolve a ``draft:<id>`` value for on-change methods."""
+
+    if not (isinstance(value, str) and value.startswith('draft:')):
+      return None
+
+    Temp = cls._draft_model()
+    draft_id = int(value.split(':', 1)[1])
+    rows = Temp.browse(draft_id)
+    if not rows:
+      raise ValueError(f'Draft {draft_id} does not exist.')
+    draft = rows[0]
+    if model_name and draft.model != model_name:
+      raise ValueError(
+        f'Draft {draft_id} is a {draft.model}, not {model_name}.'
+      )
+    from jerp.env import Environment
+
+    registry = Environment.instance.registry()
+    owner = registry.get(draft.model) or cls
+    return owner._draft_dict(draft)
+
+  @classmethod
+  @api_expose
+  def new(cls, token=None, values=None, reuse=True):
+    """Create a new record.
+
+    Without a draft token this returns an in-memory pseudo-record (Odoo style)
+    that ``record.save()`` writes directly. With a token it keeps the existing
+    server-side draft behaviour used by forms. Pass ``reuse=False`` to create a
+    second draft for the same model/token (one row per table record).
+    """
+
+    if getattr(cls, '_virtual', False):
+      raise ValueError('Virtual models do not support drafts.')
+    if token is None:
+      return cls._new_record(values)
+    token = cls._draft_token(token)
+    Temp = cls._draft_model()
+    existing = []
+    if reuse:
+      existing = Temp.search(
+        [
+          ('token', '=', token),
+          ('model', '=', cls._name),
+          ('state', '=', 'create'),
+          ('record_id', 'is null', None),
+        ],
+        limit=1,
+      )
+    if existing:
+      return cls._draft_dict(existing[0])
+
+    data = cls._draft_defaults()
+    data.update(cls._draft_filter_values(values))
+    draft = Temp.create(
+      token=token,
+      model=cls._name,
+      record_id=None,
+      state='create',
+      data=json.dumps(data),
+      dirty={},
+      version=0,
+    )
+    return cls._draft_dict(draft)
+
+  @classmethod
+  @api_expose
+  def edit(cls, id, token=None, values=None):
+    """Create (or return) a draft copy of an existing record."""
+
+    if getattr(cls, '_virtual', False):
+      raise ValueError('Virtual models do not support drafts.')
+    token = cls._draft_token(token)
+    record_id = int(id)
+    Temp = cls._draft_model()
+
+    existing = Temp.search(
+      [
+        ('token', '=', token),
+        ('model', '=', cls._name),
+        ('record_id', '=', record_id),
+      ],
+      limit=1,
+    )
+    if existing:
+      draft = existing[0]
+      if draft.state == 'delete':
+        records = cls.browse(record_id)
+        if not records:
+          raise ValueError(f'{cls._name}#{record_id} no longer exists.')
+        record = records[0]
+        stamp = record.read(['updated_at']).get('updated_at')
+        draft.write(
+          {
+            'state': 'update',
+            'data': json.dumps(cls._draft_record_values(record)),
+            'dirty': {},
+            'base_stamp': stamp,
+            'version': int(draft.version or 0) + 1,
+          }
+        )
+      return cls._draft_dict(draft)
+
+    records = cls.browse(record_id)
+    if not records:
+      raise ValueError(f'{cls._name}#{record_id} does not exist.')
+    record = records[0]
+    data = cls._draft_record_values(record)
+    initial = cls._draft_filter_values(values)
+    data.update(initial)
+    stamp = record.read(['updated_at']).get('updated_at')
+    draft = Temp.create(
+      token=token,
+      model=cls._name,
+      record_id=record_id,
+      state='update',
+      data=json.dumps(data),
+      dirty=initial,
+      base_stamp=stamp,
+      version=0,
+    )
+    return cls._draft_dict(draft)
+
+  @classmethod
+  @api_expose
+  def change(cls, draft_id, values):
+    """Apply field changes to a draft and run server-side on-change methods."""
+
+    if getattr(cls, '_virtual', False):
+      raise ValueError('Virtual models do not support drafts.')
+    Temp = cls._draft_model()
+    rows = Temp.browse(draft_id)
+    if not rows:
+      raise ValueError(f'Draft {draft_id} does not exist.')
+    draft = rows[0]
+    if draft.model != cls._name:
+      raise ValueError(
+        f'Draft {draft_id} belongs to {draft.model}, not {cls._name}.'
+      )
+    if draft.state == 'delete':
+      raise ValueError('A draft staged for deletion cannot be changed.')
+
+    data = cls._draft_load(draft.data)
+    dirty = cls._draft_load(draft.dirty)
+    before = dict(data)
+    incoming = cls._draft_filter_values(values)
+    changed = []
+
+    for name, value in incoming.items():
+      if data.get(name) != value:
+        data[name] = value
+        changed.append(name)
+
+    result = cls._run_on_change(
+      data,
+      changed,
+      record_id=draft.record_id,
+      draft_id=draft.id,
+      token=draft.token,
+    )
+
+    if draft.state == 'update':
+      for name, value in data.items():
+        if before.get(name) != value and name in cls._fields:
+          dirty[name] = value
+
+    version = int(draft.version or 0) + 1
+    draft.write(
+      {
+        'data': json.dumps(cls._draft_json(data)),
+        'dirty': cls._draft_json(dirty),
+        'version': version,
+      }
+    )
+    cls._refresh_parent_drafts(draft, data)
+    values = cls._draft_json(data)
+    return {
+      'id': draft.id,
+      'draft_id': draft.id,
+      'model': draft.model,
+      'record_id': draft.record_id,
+      'state': draft.state,
+      'values': values,
+      'dirty': dirty,
+      'version': version,
+      'changed': changed,
+      'warnings': result['warnings'],
+      'errors': result['errors'],
+      'domains': result['domains'],
+    }
+
+  @classmethod
+  def _refresh_parent_drafts(cls, draft, values):
+    """Recompute computed fields on drafts referring to ``draft``."""
+
+    try:
+      from jerp.env import Environment
+
+      registry = Environment.instance.registry()
+      Temp = cls._draft_model()
+    except Exception:
+      return
+
+    for name, value in values.items():
+      field = cls._fields.get(name)
+      comodel = getattr(field, 'comodel', None) if field else None
+      if not comodel:
+        continue
+      if not (isinstance(value, str) and value.startswith('draft:')):
+        continue
+      try:
+        parent_id = int(value.split(':', 1)[1])
+      except ValueError:
+        continue
+      rows = Temp.browse(parent_id)
+      if not rows:
+        continue
+      parent_row = rows[0]
+      if parent_row.model != comodel:
+        continue
+      Parent = registry.get(comodel)
+      if Parent is None or not Parent._computed_field_names():
+        continue
+      parent_data = Parent._draft_load(parent_row.data)
+      parent = Parent._pseudo_record(
+        parent_data,
+        draft_id=parent_id,
+        token=parent_row.token,
+        record_id=parent_row.record_id,
+        state=parent_row.state,
+      )
+      parent._compute_all()
+      changed = False
+      for computed in Parent._computed_field_names():
+        computed_value = parent._values.get(computed)
+        if parent_data.get(computed) != computed_value:
+          parent_data[computed] = computed_value
+          changed = True
+      if changed:
+        parent_row.write(
+          {
+            'data': json.dumps(Parent._draft_json(parent_data)),
+            'version': int(parent_row.version or 0) + 1,
+          }
+        )
+
+  @classmethod
+  @api_expose
+  def drafts(cls, token=None):
+    """List every draft in a token, across models."""
+
+    from jerp.env import Environment
+
+    token = cls._draft_token(token)
+    Temp = cls._draft_model()
+    registry = Environment.instance.registry()
+    rows = Temp.search([('token', '=', token)], order='id')
+    result = []
+    for row in rows:
+      owner = registry.get(row.model) or cls
+      result.append(owner._draft_dict(row))
+    return result
+
+  @classmethod
+  @api_expose
+  def discard(cls, draft_id):
+    """Discard one draft without touching the real record."""
+
+    Temp = cls._draft_model()
+    rows = Temp.browse(draft_id)
+    if not rows:
+      return False
+    draft = rows[0]
+    if draft.model != cls._name:
+      raise ValueError(
+        f'Draft {draft_id} belongs to {draft.model}, not {cls._name}.'
+      )
+    return draft.unlink()
+
+  @classmethod
+  @api_expose
+  def discard_all(cls, token=None):
+    """Discard every draft in a token."""
+
+    token = cls._draft_token(token)
+    Temp = cls._draft_model()
+    drafts = Temp.search([('token', '=', token)])
+    for draft in drafts:
+      draft.unlink()
+    return len(drafts)
+
+  @classmethod
+  @api_expose
+  def remove(cls, token, id):
+    """Stage deletion of an existing record."""
+
+    if getattr(cls, '_virtual', False):
+      raise ValueError('Virtual models do not support drafts.')
+    token = cls._draft_token(token)
+    record_id = int(id)
+    Temp = cls._draft_model()
+
+    existing = Temp.search(
+      [
+        ('token', '=', token),
+        ('model', '=', cls._name),
+        ('record_id', '=', record_id),
+      ],
+      limit=1,
+    )
+    if existing:
+      draft = existing[0]
+      if draft.state == 'create':
+        draft.unlink()
+        return None
+      draft.write(
+        {
+          'state': 'delete',
+          'dirty': {},
+          'version': int(draft.version or 0) + 1,
+        }
+      )
+      return cls._draft_dict(draft)
+
+    records = cls.browse(record_id)
+    if not records:
+      raise ValueError(f'{cls._name}#{record_id} does not exist.')
+    record = records[0]
+    stamp = record.read(['updated_at']).get('updated_at')
+    draft = Temp.create(
+      token=token,
+      model=cls._name,
+      record_id=record_id,
+      state='delete',
+      data=json.dumps({}),
+      dirty={},
+      base_stamp=stamp,
+      version=0,
+    )
+    return cls._draft_dict(draft)
+
+  @classmethod
+  def _record_write_values(cls, record) -> dict:
+    values = {}
+    for name, field in cls._fields.items():
+      if (
+        name in cls._DRAFT_STANDARD_FIELDS
+        or field.auto_increment
+        or getattr(field, 'compute', None)
+        or field.hide
+      ):
+        continue
+      if name in record._values:
+        value = record._values.get(name)
+        if value is None and field.required and isinstance(
+          field, (fields.StringField, fields.TextField)
+        ):
+          value = ''
+        values[name] = cls._coerce_write_value(name, value)
+    return values
+
+  def _save_record(self):
+    """Save this record (instance form of ``Model.save``)."""
+
+    cls = type(self)
+    if self._draft_id:
+      results = cls.commit(self._token)
+      for result in results:
+        if result.get('draft_id') == self._draft_id:
+          rows = cls.browse(result['id'])
+          if rows:
+            real = rows[0]
+            self._values = dict(real._values)
+            self._persisted = True
+            self._is_new = False
+            self._pseudo = False
+            self._record_id = real.id
+            self._draft_id = None
+            self._one2many_cache = {}
+          break
+      return self
+
+    if self._persisted:
+      return self
+
+    database = cls._database()
+    with database.transaction():
+      self._compute_all()
+      created = cls.create(**cls._record_write_values(self))
+      children = []
+      relations = cls._reverse_relations()
+      for name, rows in self.__dict__.get('_one2many_cache', {}).items():
+        relation = relations.get(name)
+        if relation is None:
+          continue
+        child_model, inverse_name = relation
+        for child in rows:
+          child._compute_all()
+          values = child_model._record_write_values(child)
+          values[inverse_name] = created.id
+          children.append(child_model.create(**values))
+      for child in children:
+        child._recompute_computed()
+      created._recompute_computed()
+      self._values = dict(created._values)
+      self._persisted = True
+      self._is_new = False
+      self._pseudo = False
+      self._record_id = created.id
+      self._one2many_cache = {}
+    return self
+
+  @classmethod
+  def _save_draft(cls, draft_id):
+    """Commit the token containing one draft."""
+
+    Temp = cls._draft_model()
+    rows = Temp.browse(draft_id)
+    if not rows:
+      raise ValueError(f'Draft {draft_id} does not exist.')
+    return cls.commit(rows[0].token)
+
+  save = dualmethod(_save_record, _save_draft, exposed=True)
+
+  @classmethod
+  @api_expose
+  def commit(cls, token=None, parent_field=None, parent_id=None):
+    """Commit every draft in a token atomically."""
+
+    from jerp.env import Environment
+
+    token = cls._draft_token(token)
+    registry = Environment.instance.registry()
+    Temp = cls._draft_model()
+    rows = Temp.search([('token', '=', token)], order='id')
+    if not rows:
+      return []
+
+    items = []
+    by_id = {}
+    for row in rows:
+      real = registry.get(row.model)
+      if real is None:
+        raise ValueError(f'Draft points to unknown model "{row.model}".')
+      data = cls._draft_load(row.data)
+      dirty = cls._draft_load(row.dirty)
+      item = {
+        'draft': row,
+        'real': real,
+        'state': row.state,
+        'data': data,
+        'dirty': dirty,
+        'deps': set(),
+      }
+      items.append(item)
+      by_id[row.id] = item
+
+    for item in items:
+      if item['state'] == 'delete':
+        continue
+      for name, value in item['data'].items():
+        field = item['real']._fields.get(name)
+        if field is None or not getattr(field, 'comodel', None):
+          continue
+        if not (isinstance(value, str) and value.startswith('draft:')):
+          continue
+        try:
+          target_id = int(value.split(':', 1)[1])
+        except ValueError:
+          raise ValueError(f'Invalid draft reference: {value!r}')
+        target = by_id.get(target_id)
+        if target is None:
+          raise ValueError(
+            f'Referenced draft {target_id} is not in token {token}.'
+          )
+        if target['state'] == 'delete':
+          raise ValueError(
+            f'Draft {item["draft"].id} references a record staged for deletion.'
+          )
+        if target['real']._name != field.comodel:
+          raise ValueError(
+            f'Draft reference {value!r} does not match {field.comodel}.'
+          )
+        item['deps'].add(target_id)
+
+    resolved = {}
+    for item in items:
+      if item['state'] in ('update', 'delete') and item['draft'].record_id:
+        resolved[item['draft'].id] = item['draft'].record_id
+
+    def resolve_value(value):
+      if isinstance(value, str) and value.startswith('draft:'):
+        target_id = int(value.split(':', 1)[1])
+        if target_id not in resolved:
+          raise ValueError(f'Unresolved draft reference: {value!r}')
+        return resolved[target_id]
+      return value
+
+    results = []
+    pending = [
+      item for item in items if item['state'] in ('create', 'update')
+    ]
+    database = cls._database()
+
+    with database.transaction():
+      while pending:
+        progressed = False
+        for item in list(pending):
+          if not item['deps'].issubset(resolved):
+            continue
+
+          real = item['real']
+          draft = item['draft']
+
+          def resolved_values(values):
+            result = {}
+            for name, value in values.items():
+              field = real._fields.get(name)
+              if field is None or name in cls._DRAFT_STANDARD_FIELDS:
+                continue
+              result[name] = (
+                resolve_value(value)
+                if getattr(field, 'comodel', None)
+                else value
+              )
+            return result
+
+          if item['state'] == 'create':
+            values = resolved_values(item['data'])
+            if (
+              parent_field
+              and parent_field in real._fields
+              and parent_field not in values
+              and parent_id not in (None, '')
+            ):
+              values[parent_field] = parent_id
+            record = real.create(**values)
+            resolved[draft.id] = record.id
+            results.append(
+              {
+                'draft_id': draft.id,
+                'model': real._name,
+                'id': record.id,
+                'state': 'create',
+              }
+            )
+          else:
+            record_id = draft.record_id
+            records = real.browse(record_id)
+            if not records:
+              raise ValueError(
+                f'{real._name}#{record_id} no longer exists.'
+              )
+            record = records[0]
+            if draft.base_stamp and 'updated_at' in real._fields:
+              current = record.read(['updated_at']).get('updated_at')
+              if current != draft.base_stamp:
+                raise ValueError(
+                  f'{real._name}#{record_id} changed since the draft was created.'
+                )
+            changes = resolved_values(item['dirty'])
+            if changes:
+              record.write(changes)
+            results.append(
+              {
+                'draft_id': draft.id,
+                'model': real._name,
+                'id': record_id,
+                'state': 'update',
+              }
+            )
+
+          pending.remove(item)
+          progressed = True
+
+        if not progressed:
+          raise ValueError('Circular draft references cannot be committed.')
+
+      for item in items:
+        if item['state'] != 'delete':
+          continue
+        real = item['real']
+        draft = item['draft']
+        records = real.browse(draft.record_id)
+        if not records:
+          continue
+        record = records[0]
+        if draft.base_stamp and 'updated_at' in real._fields:
+          current = record.read(['updated_at']).get('updated_at')
+          if current != draft.base_stamp:
+            raise ValueError(
+              f'{real._name}#{draft.record_id} changed since the draft was created.'
+            )
+        record.unlink()
+        results.append(
+          {
+            'draft_id': draft.id,
+            'model': real._name,
+            'id': draft.record_id,
+            'state': 'delete',
+          }
+        )
+
+      # Recompute stored computed fields once every created/updated record
+      # exists, so parent totals see their committed children.
+      for result in results:
+        if result['state'] not in ('create', 'update'):
+          continue
+        real = registry.get(result['model'])
+        if real is None or not real._computed_field_names():
+          continue
+        records = real.browse(result['id'])
+        if records:
+          records[0]._recompute_computed()
+
+      for row in rows:
+        row.unlink()
+
+    return results
 
   # --- standard API methods (exposed through POST /api/model/<name>/<func>) -
 
@@ -1065,6 +2527,31 @@ class Model(BaseModel):
     return deleted
 
   # --- source cooperation -------------------------------------------------
+
+  @classmethod
+  def call_exposed(cls, func: str, body=None):
+    """Call an exposed model method from the API controller."""
+
+    payload = dict(body or {})
+    raw = inspect.getattr_static(cls, func)
+    if isinstance(raw, dualmethod):
+      return getattr(cls, func)(**payload)
+    if isinstance(raw, (classmethod, staticmethod)):
+      return getattr(cls, func)(**payload)
+
+    record_id = payload.pop('id', None)
+    draft_id = payload.pop('draft_id', None)
+    if record_id is not None:
+      records = cls.browse(record_id)
+      if len(records) != 1:
+        raise ValueError(f'{cls._name}#{record_id} does not exist.')
+      return getattr(records[0], func)(**payload)
+    if draft_id is not None:
+      record = cls._draft_record(draft_id)
+      if record is None:
+        raise ValueError(f'Draft {draft_id} does not exist.')
+      return getattr(record, func)(**payload)
+    raise ValueError(f'Method "{func}" requires a record id.')
 
   @classmethod
   def call_parts(cls, method_name: str, *args, record=None, **kwargs):

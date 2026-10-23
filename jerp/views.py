@@ -101,6 +101,9 @@ def _normalize(item: dict) -> dict:
     'menu': bool(item.get('menu', True)),
     'drawer': bool(item.get('drawer', True)),
     'hide': bool(item.get('hide', False)),
+    'add_to_home': bool(item.get('add_to_home', False)),
+    'description': item.get('description'),
+    'sequence': item.get('sequence', 0),
   }
 
 
@@ -133,6 +136,10 @@ def _menu_node(item: dict):
     node['auth'] = bool(item.get('auth', True))
   if item.get('img'):
     node['img'] = item['img']
+  if item.get('description'):
+    node['description'] = item['description']
+  if item.get('add_to_home'):
+    node['add_to_home'] = True
 
   children = [
     child
@@ -156,6 +163,59 @@ def collect_menu_tree(modules_dir: str | Path, module_names) -> list[dict]:
         tree.append(node)
   tree.sort(key=lambda n: (n.get('sequence', 0), n['label']))
   return tree
+
+
+def _first_href(item: dict):
+  if item.get('view'):
+    return menu_href(_normalize(item))
+  for child in item.get('children') or []:
+    href = _first_href(child)
+    if href:
+      return href
+  return None
+
+
+def collect_home_pages(modules_dir: str | Path, module_names) -> list[dict]:
+  """Pages flagged with ``add_to_home``, including hidden entries.
+
+  Hidden menu entries (for example the database manager) can still be surfaced
+  on the home page. Groups may be flagged too; they link to their first page.
+  """
+
+  entries: list[dict] = []
+
+  def walk(module_name, items, root_sequence):
+    for item in items:
+      if not isinstance(item, dict):
+        continue
+      if item.get('add_to_home'):
+        href = _first_href(item)
+        if href:
+          entries.append({
+            'label': item.get('label') or item.get('view') or 'Page',
+            'href': href,
+            'description': item.get('description'),
+            'img': item.get('img'),
+            'module': module_name,
+            'sequence': root_sequence,
+          })
+      if item.get('children'):
+        walk(module_name, item['children'], root_sequence)
+
+  for module_name, items in _read_module_entries(modules_dir, module_names):
+    for item in items:
+      if isinstance(item, dict):
+        walk(module_name, [item], item.get('sequence', 0))
+
+  entries.sort(key=lambda entry: entry.get('sequence', 0))
+  unique: list[dict] = []
+  seen: set[str] = set()
+  for entry in entries:
+    if entry['href'] in seen:
+      continue
+    seen.add(entry['href'])
+    unique.append(entry)
+  return unique
 
 
 def routes_from_pages(pages) -> dict[str, str]:
@@ -198,7 +258,7 @@ class ViewRenderer:
       self._shell_mtime = mtime
     return self._shell
 
-  def render(self, view_key, context, views, menus=None, routes=None, pages=None) -> str:
+  def render(self, view_key, context, views, menus=None, routes=None, pages=None, home=None) -> str:
     html = self.shell()
 
     import_map = (
@@ -216,6 +276,8 @@ class ViewRenderer:
       + json.dumps(pages or {}) + '</script>',
       '<script id="__JERP_MENUS__" type="application/json">'
       + json.dumps(menus or []) + '</script>',
+      '<script id="__JERP_HOME__" type="application/json">'
+      + json.dumps(home or []) + '</script>',
       '<script id="__JERP_CONTEXT__" type="application/json">'
       + json.dumps(context or {}, default=str) + '</script>',
     ])
@@ -258,9 +320,10 @@ def _installed_modules(config):
     active = environment.active_database
     if active:
       registry = environment.databases.registry(active)
-      if not registry.ready:
-        registry.load()
-      return registry.list_modules()
+      # ``sys_module`` is authoritative: another process may have installed or
+      # uninstalled a module since this registry was built.
+      installed = registry.module_manager.installed()
+      return list(installed)
   except Exception:
     if active:
       # A database is selected but its registry could not be loaded. Do not
@@ -288,6 +351,7 @@ def render(view_key=None, context: dict | None = None) -> str:
   views = collect_views(modules, config.views_dir)
   pages = collect_pages(config.modules_path, modules)
   menus = collect_menu_tree(config.modules_path, modules)
+  home = collect_home_pages(config.modules_path, modules)
   pages_map = {
     page['view']: {
       'auth': page['auth'],
@@ -304,4 +368,5 @@ def render(view_key=None, context: dict | None = None) -> str:
     menus,
     routes_from_pages(pages),
     pages_map,
+    home,
   )

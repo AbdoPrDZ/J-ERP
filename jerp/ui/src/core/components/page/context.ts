@@ -38,18 +38,27 @@ export function usePage(): PageConfig | null {
 /** The record currently selected in a table/cards, provided to custom content. */
 export const RecordContext = createContext<Record<string, unknown> | null>(null);
 
-/** The current form's model, record and values, used by form-embedded views. */
-export interface FormContextValue {
-  model?: string;
-  recordId?: number | string | null;
-  values: Record<string, unknown>;
-  refresh: () => void;
-  registerCommit?: (
-    handler: (recordId: number | string) => Promise<void>,
-  ) => () => void;
+export interface DraftQueueHandle {
+  flush: () => Promise<void>;
+  dispose: () => void;
+  lastErrors?: Record<string, string>;
 }
 
-export const FormContext = createContext<FormContextValue | null>(null);
+/** Draft/session context shared by a form and its embedded tables/widgets. */
+export interface DraftContextValue {
+  token: string;
+  model?: string;
+  draftId?: number | null;
+  recordId?: number | string | null;
+  values: Record<string, unknown>;
+  registerQueue: (queue: DraftQueueHandle) => () => void;
+  flushAll: () => Promise<void>;
+  discardAll: () => Promise<void>;
+  draftsVersion: number;
+  notifyDraftsChanged: () => void;
+}
+
+export const DraftContext = createContext<DraftContextValue | null>(null);
 
 /** True when a table/cards view is rendered inside a form tab. */
 export const FormTabContext = createContext(false);

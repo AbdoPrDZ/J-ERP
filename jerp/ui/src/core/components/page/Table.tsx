@@ -324,13 +324,9 @@ export function Table({
       : undefined);
 
   const actionsOf = (record: Record<string, unknown>): TableAction[] => {
-    const list: TableAction[] = [
+    return [
       ...((record._actions as TableAction[] | undefined) ?? actions ?? []),
     ];
-    if (canDelete) {
-      list.push({ label: 'Delete', method: 'delete', key: 'id', style: 'danger' });
-    }
-    return list;
   };
 
   const run = async (action: TableAction, record: Record<string, unknown>) => {
@@ -420,6 +416,15 @@ export function Table({
     Boolean(inlineEdit) ||
     canDelete ||
     records.some((record) => actionsOf(record).length > 0);
+
+  const editingKey = inlineEdit
+    ? String(inlineEdit.editingId ?? '')
+    : '';
+  const hasEditingRecord = Boolean(
+    inlineEdit &&
+      editingKey &&
+      records.some((record) => String(record.id) === editingKey),
+  );
 
   const renderEditableRow = (
     record: Record<string, unknown> | null,
@@ -514,14 +519,6 @@ export function Table({
             {selected.size} selected
           </span>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded border border-slate-300 px-3 py-1 text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5 disabled:opacity-40"
-              disabled={bulkBusy}
-              onClick={clearSelection}
-            >
-              Clear
-            </button>
             {selectionActions ? selectionActions(Array.from(selected)) : null}
             {canDelete ? (
               <button
@@ -615,13 +612,14 @@ export function Table({
             </tr>
           </thead>
           <tbody>
-            {inlineEdit?.mode === 'create'
+            {inlineEdit && !hasEditingRecord
               ? renderEditableRow(null, 'new')
               : null}
             {records.map((record, rowIndex) => {
               if (
-                inlineEdit?.mode === 'edit' &&
-                String(record.id) === String(inlineEdit.editingId)
+                inlineEdit &&
+                editingKey &&
+                String(record.id) === editingKey
               ) {
                 return renderEditableRow(
                   record,
@@ -686,7 +684,7 @@ export function Table({
                 </tr>
               );
             })}
-            {records.length === 0 && inlineEdit?.mode !== 'create' ? (
+            {records.length === 0 && !inlineEdit ? (
               <tr>
                 <td
                   colSpan={Math.max(

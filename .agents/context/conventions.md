@@ -68,8 +68,11 @@ output in `data/`.
 
 - `npm run typecheck` for TypeScript changes.
 - `npm run build` after shell/UI-kit changes; `npm run build:views` after view
-  changes (or install/update the module).
-- Start the app and exercise the affected flow. There is no test suite.
+  or menu-config changes (it validates declared views).
+- `python -m unittest discover -s tests` for the unit suite.
+- Start the app and exercise the affected flow.
+- Draft/compute/onchange changes should also be exercised through a temporary
+  database (draft create → change → commit).
 
 ## Git And Change Management
 

@@ -8,7 +8,7 @@
       "label": "Stock",
       "sequence": 30,
       "children": [
-        { "label": "Products", "view": "stock.products", "params": { "view": "list" }, "sequence": 1 }
+        { "label": "Products", "view": "stock.products", "params": { "view": "list" }, "sequence": 1, "add_to_home": true, "description": "Catalogue, prices and stock items." }
       ]
     }
   ]

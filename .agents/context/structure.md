@@ -34,6 +34,7 @@ project-specific constraints.
 | `domains/auth.md` | Authentication/session behavior exists (it does) |
 | `domains/ui.md` | The shared React UI kit and module view pipeline exist (they do) |
 | `domains/stock.md` | A stock/business module exists (it does) |
+| `domains/sale.md` | Sales orders and lines exist (they do) |
 
 Create a new domain file only for a **meaningful domain**, never one per module,
 model or table. Promote it only through a deliberate structure change.

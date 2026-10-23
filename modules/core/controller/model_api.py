@@ -53,7 +53,7 @@ class ModelApiController(controller.Controller):
     body = request.current().json() if request.current() else {}
 
     try:
-      result = getattr(model, func)(**body)
+      result = model.call_exposed(func, body)
     except TypeError as exc:
       return response.json(
         {'error': 'bad_arguments', 'message': str(exc)}, status=400

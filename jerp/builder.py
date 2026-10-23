@@ -62,6 +62,8 @@ def _field_signature(field) -> tuple:
     repr(default),
     repr(getattr(field, 'selection', None)),
     repr(getattr(field, 'comodel', None)),
+    repr(getattr(field, 'compute', None)),
+    bool(getattr(field, 'store', True)),
   )
 
 

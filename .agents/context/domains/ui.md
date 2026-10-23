@@ -19,9 +19,17 @@ no rebuild of the shell is needed when a module's views change.
 - `App.tsx` — shell: header/menus/user menu; reads `__JERP_MENUS__` and
   `__JERP_PAGES__`; renders `<View context={context} />` inside `<main>`.
 - `model.ts` / `api.ts` — typed client for `POST /model/<name>/<func>` and the
-  `/api` fetch wrapper (same-origin credentials, JSON errors).
+  `/api` fetch wrapper (same-origin credentials, JSON errors); includes the
+  draft API (`newDraft`, `editDraft`, `changeDraft`, `drafts`, `commitDrafts`).
+- `draft.ts` — per-form session token, `DraftQueue` with an 800 ms debounce,
+  flush on Save, and draft-token cleanup after commit.
 - `components/page/` — page composition: `Page` (view/id query params, header,
-  breadcrumb, view switcher), `Table`, `Cards`, `Form`, `Action`.
+  breadcrumb, view switcher), `Table`, `Cards`, `Form`, `FormTable`, `Action`.
+- `Form` and `FormTable` edit server drafts: parent and child rows share a token,
+  rows use `reuse: false`, inline cell editing sends changes through the draft
+  queue, and parent computed values refresh when child drafts change.
+- `Many2oneField` lists real records plus drafts from the same session token.
+- Computed fields are read-only from the schema and display model-computed values.
 - `components/views/` — descriptor-driven standard views (`table`, `form`,
   `cards`) registered in `viewRegistry`, used with `/view?model=…&type=…`.
 
@@ -34,6 +42,11 @@ no rebuild of the shell is needed when a module's views change.
 - `manifest.json` maps `<module>.<snake_case_file>` → relative JS path.
 - The server exposes these at `/views/<module>/…` and injects the map into the
   shell. The import map resolves `@jerp/ui` and React to the shared bundles.
+- In Vite dev the plugin registers source view URLs and filters modules using
+  `GET /__modules` (selected database); uninstalled modules must not appear in
+  the menu, view map or home shortcuts.
+- `build:views` recurses into subdirectories and fails if a declared menu view
+  has no matching file.
 
 ## Page Query Convention
 
@@ -41,6 +54,19 @@ no rebuild of the shell is needed when a module's views change.
 - `navigateTo()` merges query params, keeping the pathname.
 - `Page` derives `view` from the query, defaults to `views[0]`, and renders the
   breadcrumb/record label.
+
+## Home And Branding
+
+- The Home page reads `__JERP_HOME__` for quick-access links (populated from
+  `add_to_home` menu entries) and computes contact/order/product/user counts from
+  the installed models only.
+- Login uses `modules/core/ui/assets/logo-full.png`, a split brand/form layout and
+  a password visibility toggle. The database manager uses the same logo and a
+  card layout; its route sets `header: false` so the shell navbar is hidden.
+- `public/favicon.ico` is linked from `public/index.html`; the Vite dev shell maps
+  `/favicon.ico` to it.
+- Home, login and technical pages live under `views/pages/`; the view key uses the
+  file basename, so `views/pages/Home.tsx` → `core.home`.
 
 ## Constraints
 

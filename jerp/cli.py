@@ -160,8 +160,8 @@ def cmd_update(args) -> int:
   except SchemaBlocked as exc:
     print(_format_plan(exc.plan, name), file=sys.stderr)
     print(
-      'The safe changes were applied; blocked changes were skipped. '
-      'Resolve them and run update again.',
+      'Nothing was applied: the module update was rolled back. '
+      'Resolve the blocked changes and run update again.',
       file=sys.stderr,
     )
     return 1

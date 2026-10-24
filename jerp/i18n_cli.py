@@ -241,16 +241,16 @@ CORE_EXTRA_KEYS.update({
   'view.core.login.subtitle': 'Use your workspace credentials to continue.',
   'view.core.login.title': 'Sign in to J-ERP',
   'view.core.login.username': 'Username',
-  'view.core.menus.column_access': 'Access',
-  'view.core.menus.column_label': 'Label',
-  'view.core.menus.column_sequence': 'Sequence',
-  'view.core.menus.column_target': 'View / endpoint',
   'view.core.menus.description': (
     "Menu entries are stored in sys.menu and synchronized from each installed "
     "module's configure.json when it is installed or updated. Groups have no "
-    'target; pages link to their view or endpoint.'
+    'target; pages link to their view or endpoint. Manual edits are local and '
+    'are replaced when the owning module is updated.'
   ),
   'view.core.menus.empty_message': 'No menus are configured.',
+  'view.core.menus.form_title': 'Menu entry',
+  'view.core.menus.group_entry': 'Menu entry',
+  'view.core.menus.group_target': 'Target',
   'view.core.menus.title': 'Menus',
   'view.core.models.empty_message': 'No models found.',
   'view.core.models.form_title': 'Model',

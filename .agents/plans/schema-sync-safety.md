@@ -1,6 +1,6 @@
 # Plan: schema sync safety and versioned migrations
 
-- **Status:** Steps 1-2 implemented (2026-10-24); Steps 3-4 proposed
+- **Status:** Steps 1-4 implemented (2026-10-24)
 - **Date:** 2026-10-24
 - **Based on:** `.agents/reviews/ChatGPT-Review.md` items 5-7 and
   `.agents/reviews/Claude-Review.md` section "Schema sync", verified against
@@ -371,15 +371,15 @@ database still reports only `add_column sys_field.state`; `doctor` there exits
 1 with "run a module update once" because that database does not have the
 column yet, and nothing was changed.
 
-### Step 3 - versioned migrations (approx. 2-3 days)
+### Step 3 - versioned migrations (approx. 2-3 days) — **done**
 
-- [ ] `jerp/migrations.py`: discovery, numeric version ordering, `migrate(cr,
+- [x] `jerp/migrations.py`: discovery, numeric version ordering, `migrate(cr,
       version)` contract, pre/post execution.
-- [ ] `jerp/registry.py`: one transaction for pre → sync → post → `_record`;
+- [x] `jerp/registry.py`: one transaction for pre → sync → post → `_record`;
       move `build_views` and seeds outside it.
-- [ ] `jerp/modules.py`: `install`/`update` stop calling `_record` before the
+- [x] `jerp/modules.py`: `install`/`update` stop calling `_record` before the
       sync; `uninstall` wrapped in one transaction.
-- [ ] `modules/core/configure.json`: bump version to `1.1.0` with an empty
+- [x] `modules/core/configure.json`: bump version to `1.1.0` with an empty
       `migrations/1.1.0/` example? No - only add a folder when there is a real
       script; document the layout in README instead.
 
@@ -387,14 +387,60 @@ Verification: a scratch DB at version `1.0.0` with a test module at `1.1.0`
 whose `pre` script copies a column; kill the process mid-sync; confirm the
 version row is still `1.0.0` and the column layout unchanged.
 
-### Step 4 - cycle detection and uninstall atomicity (approx. 0.5 day)
+**Step 3 notes / deviations from the design above**
 
-- [ ] `jerp/modules.py:97` `resolve_order`: three states
+- **Fresh installs run no migrations.** §3.7 implied `None`/`0.0.0` as the
+  previous version on install, but a new schema has no data to transform and a
+  `pre` script would run before its columns exist. `MigrationRunner.pending()`
+  returns nothing when `previous is None`; the module starts at its current
+  version.
+- `previous` is the version recorded before the lifecycle, so a module installed
+  through `update` (not `install`) also starts fresh.
+- `ModuleManager` no longer records versions itself. It exposes
+  `prepare_install` / `prepare_update` / `prepare_uninstall` (discovery,
+  validation, `build_views`, no database writes), `record`, `drop_module` and
+  `forget`; `Registry` composes them inside `db.transaction()`.
+- The transaction is `ensure_registry_tables → load(target modules) → pre →
+  sync_models → post → record`. `load()` gained an `installed` override so the
+  target model set is built before the `sys_module` rows exist.
+- **Menus and translations stay after the commit.** They depend on the language
+  seed rows written by `_apply_seeds`, which runs outside the transaction, so
+  moving them inside would import an empty catalog on a fresh database. They are
+  derived data: a failure there is repaired by the next `update`, and menu
+  backfill already happens on render. `uninstall` has no seed dependency, so its
+  menu/i18n cleanup is inside the uninstall transaction.
+- A blocked `update` now rolls back the safe part too; `SchemaBlocked` and the
+  CLI/UI wording were updated accordingly.
+
+Verification (executed, scratch database `jerp_schema_probe`, since dropped):
+install `core` + a `probe` module (1.0.0) created 14 menu rows and 421 English
+translations; updating to 1.1.0 ran `pre` (`quantity * 10`) before the new
+`note` column existed and `post` (`note = 'migrated'`) after it, and advanced
+`sys_module.version`; a 1.2.0 update whose `pre` script raised left the version
+at `1.1.0`, the `extra` column absent and the data unchanged; an uninstall with
+a simulated failure after `drop_module` left the table and module row intact,
+and the retry removed both.
+
+### Step 4 - cycle detection and uninstall atomicity (approx. 0.5 day) — **done**
+
+- [x] `jerp/modules.py:97` `resolve_order`: three states
       (`visiting`/`visited`) and a clear error naming the cycle.
-- [ ] `jerp/registry.py:280` `_installed_order`: same.
-- [ ] `jerp/modules.py:156` `uninstall`: single transaction, `_record` removal
+- [x] `jerp/registry.py:280` `_installed_order`: same.
+- [x] `jerp/modules.py:156` `uninstall`: single transaction, `_record` removal
       last; `Registry.uninstall` runs `load()`/`init_models()` inside it.
-- [ ] Tests for `A → A` and `A → B → A`.
+- [x] Tests for `A → A` and `A → B → A`.
+
+**Step 4 notes / deviations from the design above**
+
+- Cycles raise `ValueError('Circular module dependency: a -> b -> a')` from both
+  resolvers, so a broken manifest fails loudly instead of producing a partial
+  order. `resolve_order` still raises `Unknown module 'x'` for a missing
+  dependency; `_installed_order` keeps skipping dependencies that are not
+  installed.
+- `Registry.uninstall` uses `prepare_uninstall` + `drop_module` + `forget` in one
+  transaction, then reloads and synchronizes the remaining models (retired
+  columns from removed extensions stay per Step 1), then removes menus/i18n.
+- Tests live in `tests/test_modules.py`; the suite is 106 tests.
 
 ## 5. Data migration for existing databases
 

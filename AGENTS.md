@@ -11,8 +11,8 @@ Instructions for AI agents working in this repository.
 - **Frontend:** React 19 + TypeScript + Tailwind CSS 4, built with Vite 8.
 - **Modules:** each directory under `modules/` with a `configure.json` is a
   feature module, installed **per database**.
-- **Schema:** declarative models + transactional schema synchronization; there
-  are no migration files.
+- **Schema:** declarative models + transactional schema synchronization;
+  optional versioned `migrations/<version>/` scripts for data transforms.
 - **Views:** a shared React runtime (`runtime.js`) plus per-module ES module
   view bundles built with esbuild and loaded via an import map.
 

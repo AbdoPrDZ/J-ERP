@@ -33,6 +33,28 @@ class ModuleInfo:
   models: list = dataclass_field(default_factory=list)
 
 
+@dataclass
+class ModuleChange:
+  """One module whose version is about to be recorded."""
+
+  name: str
+  previous: str | None
+  info: ModuleInfo
+
+
+@dataclass
+class LifecyclePlan:
+  """What an install/update will record, resolved before any transaction."""
+
+  modules: dict[str, ModuleInfo]
+  order: list[str]
+  changes: list[ModuleChange]
+
+  @property
+  def names(self) -> list[str]:
+    return [change.name for change in self.changes]
+
+
 class ModuleManager:
   def __init__(self, db, modules_dir: str | Path):
     self.db = db
@@ -92,21 +114,36 @@ class ModuleManager:
 
   def ensure_core(self) -> None:
     if not self.db.table_exists('sys_module'):
-      self.install(BASE_MODULE)
+      plan = self.prepare_install(BASE_MODULE)
+      with self.db.transaction():
+        self.ensure_registry_tables(plan.modules)
+        for change in plan.changes:
+          self.record(change.info)
 
   def resolve_order(self, modules: dict[str, ModuleInfo], target: str) -> list[str]:
+    """Dependency order for ``target``; raises on unknown or circular modules."""
+
     order: list[str] = []
-    seen: set[str] = set()
+    state: dict[str, int] = {}
+    stack: list[str] = []
 
     def visit(name: str) -> None:
-      if name in seen:
-        return
       info = modules.get(name)
       if info is None:
         raise ValueError(f"Unknown module '{name}'")
-      seen.add(name)
+      status = state.get(name)
+      if status == 2:
+        return
+      if status == 1:
+        start = stack.index(name)
+        cycle = ' -> '.join(stack[start:] + [name])
+        raise ValueError(f'Circular module dependency: {cycle}')
+      state[name] = 1
+      stack.append(name)
       for dependency in info.depends:
         visit(dependency)
+      stack.pop()
+      state[name] = 2
       order.append(name)
 
     visit(target)
@@ -114,46 +151,68 @@ class ModuleManager:
 
   # --- lifecycle ----------------------------------------------------------
 
-  def install(self, name: str, force: bool = False) -> list[str]:
+  def prepare_install(self, name: str, force: bool = False) -> LifecyclePlan:
+    """Resolve dependencies, validate, build views; do not touch the database.
+
+    The caller records the modules and synchronizes their schema inside one
+    transaction (see ``Registry.install``).
+    """
+
     modules = self.discover()
     order = self.resolve_order(modules, name)
     self._validate_install(modules, order)
-    self._ensure_registry_tables(modules)
 
+    installed = self.installed()
+    changes: list[ModuleChange] = []
     for module_name in order:
       info = modules[module_name]
-      existing = self.installed().get(module_name)
+      existing = installed.get(module_name)
       if existing and existing['version'] == info.version and not force:
         continue
-      self._record(info)
+      changes.append(
+        ModuleChange(
+          name=module_name,
+          previous=existing['version'] if existing else None,
+          info=info,
+        )
+      )
       self.build_views(module_name)
 
-    return order
+    return LifecyclePlan(modules=modules, order=order, changes=changes)
 
-  def update(self, name: str | None = None, force: bool = True) -> list[str]:
+  def prepare_update(
+    self, name: str | None = None, force: bool = True
+  ) -> LifecyclePlan:
+    """Resolve which installed modules an update will re-record."""
+
     modules = self.discover()
-    if name:
-      targets = [name]
-    else:
-      targets = list(self.installed().keys())
+    installed = self.installed()
+    targets = [name] if name else list(installed)
 
     self._validate_install(modules, targets)
 
-    synced: list[str] = []
+    changes: list[ModuleChange] = []
     for module_name in targets:
       info = modules.get(module_name)
       if info is None:
         continue
-      existing = self.installed().get(module_name)
+      existing = installed.get(module_name)
       if existing and not force and existing['version'] == info.version:
         continue
-      self._record(info)
+      changes.append(
+        ModuleChange(
+          name=module_name,
+          previous=existing['version'] if existing else None,
+          info=info,
+        )
+      )
       self.build_views(module_name)
-      synced.append(module_name)
 
-    return synced
+    return LifecyclePlan(modules=modules, order=targets, changes=changes)
 
-  def uninstall(self, name: str) -> None:
+  def prepare_uninstall(self, name: str) -> ModuleInfo:
+    """Validate that ``name`` can be uninstalled and return its manifest."""
+
     if name == BASE_MODULE:
       raise ValueError('The core module cannot be uninstalled.')
 
@@ -172,14 +231,19 @@ class ModuleManager:
       raise ValueError(
         f"Cannot uninstall '{name}'; required by: {', '.join(dependents)}"
       )
+    return info
 
-    # Extensions do not own their target's table: the registry rebuild after
-    # this returns synchronizes the reduced model and drops the added columns.
+  def drop_module(self, info: ModuleInfo) -> None:
+    """Drop the module's own tables (extensions keep their target's table)."""
+
     syncer = SchemaSyncer(self.db)
     for model in reversed(info.models):
       if getattr(model, '_is_extension', False):
         continue
       syncer.drop_model(model)
+
+  def forget(self, name: str) -> None:
+    """Delete the module's installation record."""
 
     if self.db.table_exists('sys_module'):
       self.db.execute('DELETE FROM sys_module WHERE name = %s', [name])
@@ -252,7 +316,7 @@ class ModuleManager:
         f"in modules/{module_name}/configure.json."
       )
 
-  def _ensure_registry_tables(self, modules: dict) -> None:
+  def ensure_registry_tables(self, modules: dict) -> None:
     """Create the system tables before the first module is recorded."""
 
     if self.db.table_exists('sys_module'):
@@ -294,7 +358,8 @@ class ModuleManager:
 
   # --- internals ----------------------------------------------------------
 
-  def _record(self, info: ModuleInfo, state: str = 'installed') -> None:
+  def record(self, info: ModuleInfo, state: str = 'installed') -> None:
+    """Write the module's version; must run inside the lifecycle transaction."""
     self.db.execute(
       'INSERT INTO sys_module (name, version, state, summary, created_at, updated_at) '
       'VALUES (%s, %s, %s, %s, NOW(), NOW()) '

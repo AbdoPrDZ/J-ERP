@@ -30,6 +30,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   many2one or file/image field (for example a country used by states); bulk
   deletes run in one transaction so a blocked row leaves nothing half-deleted.
 
+#### Schema sync and migrations
+
+- Schema plans: every install/update can be previewed without changing the
+  database (`module.preview`, `update --dry-run`), with the exact SQL, warnings
+  and blocked entries.
+- Renames are no longer guessed: a column moves only when the field declares
+  `renamed_from`; otherwise the old column is kept and the new field starts
+  empty.
+- Removed fields are retired instead of dropped: their `sys.field` row is marked
+  `retired`, the column stays, and `doctor` lists it with the SQL that would
+  drop it. `update --allow-drop` (or the dialog toggle) drops retired columns
+  database-wide.
+- Type changes apply only when the dialect can cast them without loss; the
+  request path defers even lossless changes, and ordinary requests never drop or
+  retype a column.
+- Versioned data migrations: `modules/<module>/migrations/<version>/pre-*.py`
+  and `post-*.py` scripts define `migrate(cr, version)` and run inside the
+  lifecycle transaction, `pre` against the old schema and `post` against the
+  new one. Folders run only when the module version moves forward; fresh
+  installs and `update(force=True)` never re-run them.
+- Module lifecycle is atomic: dependency ordering, schema sync, migrations and
+  `sys_module` version rows commit together, so a failed script or blocked
+  change rolls the whole update back with the version unchanged. Menus and
+  translations are refreshed after the commit because they depend on the
+  language seed data.
+- `uninstall` runs in one transaction over table drops, extension-column
+  synchronization, the `sys_module` row and menu/i18n cleanup.
+- Module dependency cycles (`A → A`, `A → B → A`) are detected and reported
+  with the cycle path during discovery and registry loading.
+
 #### UI
 
 - Draft-aware `Form`, `FormTable` and `Many2oneField`; inline row editing,
@@ -46,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The command palette loads searchable models from `GET /api/models` with
   `Cache-Control: no-store` on every open instead of using injected page data.
 - Modern Home dashboard with live counts.
+- The core Menus page is a normal editable table/form over `sys.menu` (create,
+  update, delete) instead of a read-only tree; manual edits stay local and are
+  replaced when the owning module is updated.
 - Redesigned login (full logo, split brand/form layout, password visibility) and
   database manager (card layout, stats, refreshed modals, no shell navbar).
 - New full logo asset and favicon.
@@ -109,6 +142,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Home quick access and the `add_to_home` option were removed for now; the
   option is kept in manifests but ignored until the home layout is redesigned.
 - Seed/multilingual writes no longer re-enter `ensure_loaded` recursively.
+- A blocked module update now reports that nothing was applied: the safe part of
+  the plan is rolled back with the blocked part instead of being committed
+  first.
 - The database manager page remains English-only because it renders before any
   database/language catalog is available.
 - Database drops use the optional admin role for a forced `DROP DATABASE ...

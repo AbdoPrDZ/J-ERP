@@ -2,7 +2,7 @@
 
 **A modular, self-hosted ERP framework where modules own everything — models, schema, menus, pages and views.**
 
-J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + TypeScript + Tailwind SPA. Modules are installed **per database**: installing or updating a module synchronizes its schema in a single transaction, so there are no migration files to write or maintain. Each module also ships the menus, routes and views it contributes, which the server injects into the shell and the client loads dynamically.
+J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + TypeScript + Tailwind SPA. Modules are installed **per database**: installing or updating a module synchronizes its schema in a single transaction, so structural changes need no migration files; optional versioned `migrations/<version>/` scripts transform data in that same transaction. Each module also ships the menus, routes and views it contributes, which the server injects into the shell and the client loads dynamically.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.15-3776AB.svg)](https://www.python.org/)
@@ -14,7 +14,7 @@ J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + Typ
 ## Highlights
 
 - **Per-database modules** - one server, many independent databases, each with its own set of installed modules and its own schema.
-- **No migrations** - models are declared in Python; the schema is diffed and synchronized transactionally on install/update.
+- **Schema sync without migration files** - models are declared in Python; the schema is diffed and synchronized transactionally on install/update. Data transforms, when needed, run as versioned `pre`/`post` scripts in the same transaction.
 - **Odoo-style models** - positional relation/selection fields, recordsets, many2one record access, one2many commands, computed fields with `@depends_on` and server-side `@on_change`.
 - **Server-side drafts** - forms and embedded tables edit `temp.model` drafts with a debounced on-change round-trip, reload-safe state and atomic parent/child commit.
 - **Multi-database management** - create, list, select and drop databases from the UI; access is scoped to the configured owner.
@@ -233,7 +233,7 @@ Records are recordsets: `search`/`browse` return a list-like `RecordSet`, many2o
 
 ### Schema changes
 
-There are no migration files: the schema is synchronized from the declared fields when a module is installed or updated. The syncer is deliberately conservative with existing data.
+Structural changes need no migration files: the schema is synchronized from the declared fields when a module is installed or updated. The syncer is deliberately conservative with existing data.
 
 - New tables, nullable or defaulted columns, and indexes are applied automatically.
 - **Renames are never guessed.** Declare the old attribute name on the new field:
@@ -258,6 +258,19 @@ python -m jerp.cli --database <db> doctor                # retired columns + SQL
 `--allow-drop` is database-wide: it drops every retired column whose model was synchronized by that update. Without it, removed fields keep their column and data.
 
 A sync always produces a plan first; `Registry.last_schema_plan` holds the result of the last one, including the SQL and the blocked entries.
+
+Data transforms that schema sync cannot express go in a versioned migration folder:
+
+```text
+modules/sale/
+  configure.json          # "version": "1.1.0"
+  migrations/
+    1.1.0/
+      pre-backfill_margin.py
+      post-rename_currency.py
+```
+
+Each script defines `migrate(cr, version)`, where `cr` is the psycopg connection (use raw SQL; the ORM still describes the old schema during `pre`) and `version` is the previously installed module version. `pre-*` runs before the schema sync, `post-*` after it, in folder then filename order. Folders run only when the module version moves forward (`installed < folder <= target`), so `update(force=True)` never re-runs them, and a fresh install starts at the current version without running any. Schema sync, migrations and the `sys_module` version row commit together: a failing script or blocked change rolls everything back and leaves the installed version unchanged. Menus and translations are refreshed right after the commit (they need the language seed data).
 
 Views are React components declared with the page DSL and registered by name:
 

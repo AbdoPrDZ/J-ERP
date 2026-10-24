@@ -227,8 +227,8 @@ class Module(Model):
     try:
       updated = registry.update(name, allow_drop=bool(allow_drop))
     except SchemaBlocked as exc:
-      # Safe changes were committed; report the plan so the dialog can show
-      # exactly what was skipped instead of a generic failure.
+      # The lifecycle transaction was rolled back; report the plan so the dialog
+      # can show exactly what prevented the update.
       return {'updated': [], 'plan': exc.plan.as_dict(), 'error': str(exc)}
     plan = registry.last_schema_plan
     return {

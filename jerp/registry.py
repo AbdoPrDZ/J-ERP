@@ -16,6 +16,7 @@ import threading
 from pathlib import Path
 
 from jerp.builder import BuildResult, ModelBuilder
+from jerp.migrations import MigrationRunner
 from jerp.modules import ModuleManager
 from jerp.schema import SchemaBlocked, SchemaSyncer
 from jerp.seeds import SeedLoader
@@ -45,12 +46,17 @@ class Registry:
 
   # --- loading ------------------------------------------------------------
 
-  def load(self) -> 'Registry':
-    """Discover installed modules and rebuild the models for this database."""
+  def load(self, installed=None) -> 'Registry':
+    """Discover installed modules and rebuild the models for this database.
+
+    ``installed`` overrides the ``sys_module`` lookup; the lifecycle uses it to
+    build the target model set before the version rows are written.
+    """
 
     with self._lock:
       discovered = self.module_manager.discover()
-      installed = self.module_manager.installed()
+      if installed is None:
+        installed = self.module_manager.installed()
       order = self._installed_order(discovered, installed)
 
       self.modules = {}
@@ -257,37 +263,20 @@ class Registry:
 
   def install(self, name: str, force: bool = False) -> list[str]:
     with self._lock:
-      before = set(self.module_manager.installed())
-
+      plan = self.module_manager.prepare_install(name, force=force)
       try:
-        order = self.module_manager.install(name, force=force)
-        self.load()
-        self.init_models()
-        for module_name in order:
+        self._apply_lifecycle(plan)
+        for module_name in plan.order:
           self._seeded_modules.discard(module_name)
         self._apply_seeds()
         self._ensure_refs()
-        self._sync_menus(order)
-        self._sync_i18n(order)
-        return order
+        self._sync_menus(plan.order)
+        self._sync_i18n(plan.order)
+        return plan.order
       except Exception:
-        # Do not leave newly recorded modules behind if the build/sync fails.
-        try:
-          after = set(self.module_manager.installed())
-          for module_name in after - before:
-            self.db.execute(
-              'DELETE FROM sys_module WHERE name = %s', [module_name]
-            )
-            try:
-              self._remove_menus(module_name)
-            except Exception:
-              pass
-            try:
-              self._remove_i18n(module_name)
-            except Exception:
-              pass
-        except Exception:
-          pass
+        # A failed transaction leaves no module row behind; make sure the next
+        # request rebuilds from the database instead of the partial in-memory
+        # state produced while planning.
         self.ready = False
         raise
 
@@ -295,27 +284,69 @@ class Registry:
     self, name: str | None = None, force: bool = True, allow_drop: bool = False
   ) -> list[str]:
     with self._lock:
-      synced = self.module_manager.update(name, force=force)
-      self.load()
-      self.init_models(allow_drop=allow_drop)
-      targets = [name] if name else list(self.modules)
-      for module_name in targets:
-        self._seeded_modules.discard(module_name)
-      self._apply_seeds()
-      self._ensure_refs()
-      self._sync_menus(targets)
-      self._sync_i18n(targets)
-      return synced
+      plan = self.module_manager.prepare_update(name, force=force)
+      try:
+        self._apply_lifecycle(plan, allow_drop=allow_drop)
+        for module_name in plan.order:
+          self._seeded_modules.discard(module_name)
+        self._apply_seeds()
+        self._ensure_refs()
+        self._sync_menus(plan.order)
+        self._sync_i18n(plan.order)
+        return plan.names
+      except Exception:
+        self.ready = False
+        raise
 
   def uninstall(self, name: str) -> None:
     with self._lock:
-      self.module_manager.uninstall(name)
-      self._seeded_modules.discard(name)
+      info = self.module_manager.prepare_uninstall(name)
+      try:
+        with self.db.transaction():
+          self.module_manager.drop_module(info)
+          self.module_manager.forget(name)
+          self.load()
+          self.last_schema_plan = SchemaSyncer(self.db).sync_models(
+            self.models.values()
+          )
+          self._remove_menus(name)
+          self._remove_i18n(name)
+      except Exception:
+        self.ready = False
+        raise
+
+      self._schema_synced = True
       self._refs_ready = False
-      self.load()
-      self.init_models()
-      self._remove_menus(name)
-      self._remove_i18n(name)
+      self._seeded_modules.discard(name)
+
+  def _apply_lifecycle(self, plan, *, allow_drop: bool = False) -> None:
+    """Apply migrations, schema and version rows in one transaction.
+
+    Order matters: ``pre`` scripts see the old schema, the sync creates the new
+    one, ``post`` scripts see it, and the version rows are written last. A
+    blocked or failing step rolls the whole lifecycle back, so the installed
+    version never advances past a schema that was not applied.
+    """
+
+    runner = MigrationRunner(self.db)
+    with self.db.transaction() as conn:
+      self.module_manager.ensure_registry_tables(plan.modules)
+
+      installed = set(self.module_manager.installed())
+      installed.update(change.name for change in plan.changes)
+      self.load(installed=installed)
+
+      runner.run(conn, plan.changes, 'pre')
+      self.last_schema_plan = SchemaSyncer(self.db).sync_models(
+        self.models.values(), allow_drop=allow_drop
+      )
+      runner.run(conn, plan.changes, 'post')
+
+      for change in plan.changes:
+        self.module_manager.record(change.info)
+
+    self._schema_synced = True
+    self._refs_ready = False
 
   # --- accessors ----------------------------------------------------------
 
@@ -340,20 +371,34 @@ class Registry:
 
   @staticmethod
   def _installed_order(discovered, installed) -> list[str]:
-    """Installed modules in dependency order (stably sorted by name)."""
+    """Installed modules in dependency order (stably sorted by name).
+
+    Raises ``ValueError`` when the discovered dependencies contain a cycle, so a
+    broken manifest fails loudly instead of producing a partial order.
+    """
 
     order: list[str] = []
-    seen: set[str] = set()
+    state: dict[str, int] = {}
+    stack: list[str] = []
 
     def visit(name: str) -> None:
-      if name in seen:
+      status = state.get(name)
+      if status == 2:
         return
-      seen.add(name)
+      if status == 1:
+        start = stack.index(name)
+        cycle = ' -> '.join(stack[start:] + [name])
+        raise ValueError(f'Circular module dependency: {cycle}')
+
+      state[name] = 1
+      stack.append(name)
       info = discovered.get(name)
-      if info is None:
-        return
-      for dependency in info.depends:
-        visit(dependency)
+      if info is not None:
+        for dependency in info.depends:
+          visit(dependency)
+      stack.pop()
+      state[name] = 2
+
       if name in installed:
         order.append(name)
 

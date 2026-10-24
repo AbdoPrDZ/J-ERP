@@ -863,7 +863,7 @@ plan.apply = Appliquer
 plan.applying = Candidature…
 
 # English: Blocked ({count}) — these will be skipped:
-plan.blocked = Bloqué ({count}) — ceux-ci seront ignorés :
+plan.blocked = Bloqué ({count}) — rien n'a été appliqué :
 
 # English: I understand the columns listed above will be permanently deleted.
 plan.confirm_destructive = Je comprends que les colonnes répertoriées ci-dessus seront définitivement supprimées.
@@ -1186,23 +1186,20 @@ view.core.login.title = Connectez-vous à J-ERP
 # English: Username
 view.core.login.username = Nom d'utilisateur
 
-# English: Access
-view.core.menus.column_access = Accéder
-
-# English: Label
-view.core.menus.column_label = Étiquette
-
-# English: Sequence
-view.core.menus.column_sequence = Séquence
-
-# English: View / endpoint
-view.core.menus.column_target = Vue/point de terminaison
-
-# English: Menu entries are stored in sys.menu and synchronized from each installed module's configure.json when it is installed or updated. Groups have no target; pages link to their view or endpoint.
-view.core.menus.description = Les entrées de menu sont stockées dans sys.menu et synchronisées à partir du configure.json de chaque module installé lorsqu'il est installé ou mis à jour. Les groupes n'ont pas de cible ; les pages sont liées à leur vue ou à leur point de terminaison.
+# English: Menu entries are stored in sys.menu and synchronized from each installed module's configure.json when it is installed or updated. Groups have no target; pages link to their view or endpoint. Manual edits are local and are replaced when the owning module is updated.
+view.core.menus.description = Les entrées de menu sont stockées dans sys.menu et synchronisées à partir du configure.json de chaque module installé lorsqu'il est installé ou mis à jour. Les groupes n'ont pas de cible ; les pages sont liées à leur vue ou à leur point de terminaison. Les modifications manuelles sont locales et sont remplacées lors de la prochaine mise à jour du module concerné.
 
 # English: No menus are configured.
 view.core.menus.empty_message = Aucun menu n'est configuré.
+
+# English: Menu entry
+view.core.menus.form_title = Entrée de menu
+
+# English: Menu entry
+view.core.menus.group_entry = Entrée de menu
+
+# English: Target
+view.core.menus.group_target = Cible
 
 # English: Menus
 view.core.menus.title = Menus

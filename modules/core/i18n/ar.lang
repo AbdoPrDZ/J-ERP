@@ -863,7 +863,7 @@ plan.apply = يتقدم
 plan.applying = جارٍ التقديم…
 
 # English: Blocked ({count}) — these will be skipped:
-plan.blocked = محظور ({count}) — سيتم تخطي هذه العناصر:
+plan.blocked = محظور ({count}) — لم يتم تطبيق أي تغيير:
 
 # English: I understand the columns listed above will be permanently deleted.
 plan.confirm_destructive = أدرك أن الأعمدة المذكورة أعلاه سيتم حذفها نهائيًا.
@@ -1186,23 +1186,20 @@ view.core.login.title = قم بتسجيل الدخول إلى J-ERP
 # English: Username
 view.core.login.username = اسم المستخدم
 
-# English: Access
-view.core.menus.column_access = وصول
-
-# English: Label
-view.core.menus.column_label = ملصق
-
-# English: Sequence
-view.core.menus.column_sequence = تسلسل
-
-# English: View / endpoint
-view.core.menus.column_target = عرض / نقطة النهاية
-
-# English: Menu entries are stored in sys.menu and synchronized from each installed module's configure.json when it is installed or updated. Groups have no target; pages link to their view or endpoint.
-view.core.menus.description = يتم تخزين إدخالات القائمة في sys.menu وتتم مزامنتها من ملفconfig.json لكل وحدة مثبتة عند تثبيتها أو تحديثها. المجموعات ليس لها هدف. ترتبط الصفحات بعرضها أو نقطة النهاية الخاصة بها.
+# English: Menu entries are stored in sys.menu and synchronized from each installed module's configure.json when it is installed or updated. Groups have no target; pages link to their view or endpoint. Manual edits are local and are replaced when the owning module is updated.
+view.core.menus.description = يتم تخزين إدخالات القائمة في sys.menu وتتم مزامنتها من ملفconfig.json لكل وحدة مثبتة عند تثبيتها أو تحديثها. المجموعات ليس لها هدف. ترتبط الصفحات بعرضها أو نقطة النهاية الخاصة بها. التعديلات اليدوية محلية وسيتم استبدالها عند تحديث الوحدة المالكة.
 
 # English: No menus are configured.
 view.core.menus.empty_message = لم يتم تكوين أية قوائم.
+
+# English: Menu entry
+view.core.menus.form_title = إدخال القائمة
+
+# English: Menu entry
+view.core.menus.group_entry = إدخال القائمة
+
+# English: Target
+view.core.menus.group_target = الهدف
 
 # English: Menus
 view.core.menus.title = القوائم

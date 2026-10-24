@@ -34,7 +34,10 @@ from jerp.dialect import quote_ident, quote_table
 class SchemaBlocked(Exception):
   """Raised after a sync that could not apply one or more declared changes.
 
-  Safe changes were already committed; ``plan`` lists what was skipped and why.
+  ``plan`` lists what was skipped and why. When the caller wraps the sync in a
+  transaction (module install/update), the whole sync is rolled back, so nothing
+  from the plan was applied. A request-path sync (``sync_dirty``) commits safe
+  changes and only logs the block.
   """
 
   def __init__(self, plan: 'SchemaPlan'):

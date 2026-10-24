@@ -26,6 +26,7 @@ IMPORT_MAP = {
   'react-dom': '/react-runtime.js',
   'react-dom/client': '/react-runtime.js',
   '@jerp/ui': '/runtime.js',
+  '@jerp/locale': '/runtime.js',
 }
 
 HEAD_MARKER = '<!--jerp:head-->'

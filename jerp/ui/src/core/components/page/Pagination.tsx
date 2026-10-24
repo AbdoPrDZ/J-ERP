@@ -1,5 +1,7 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
+
 export const PAGE_SIZES = [10, 25, 50, 100];
 
 const PAGE_BUTTON =
@@ -31,9 +33,9 @@ export function Pagination({
     <div className="flex flex-none flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2">
-          <span>Rows per page</span>
+          <span>{t('app.rows_per_page')}</span>
           <select
-            aria-label="Rows per page"
+            aria-label={t('app.rows_per_page')}
             value={pageSize}
             disabled={disabled}
             onChange={(event) => onPageSizeChange(Number(event.target.value))}
@@ -48,13 +50,19 @@ export function Pagination({
         </label>
         <span className="text-slate-400">•</span>
         <span>
-          {total === 0 ? 'No records' : `${firstRow}–${lastRow} of ${total}`}
+          {total === 0
+            ? t('app.no_records')
+            : t('app.rows_range', {
+                first: firstRow,
+                last: lastRow,
+                total,
+              })}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-1">
         <button
           type="button"
-          aria-label="First page"
+          aria-label={t('app.first_page')}
           className={PAGE_BUTTON}
           disabled={disabled || page <= 1}
           onClick={() => onPageChange(1)}
@@ -63,28 +71,28 @@ export function Pagination({
         </button>
         <button
           type="button"
-          aria-label="Previous page"
+          aria-label={t('app.previous_page')}
           className={PAGE_BUTTON}
           disabled={disabled || page <= 1}
           onClick={() => onPageChange(Math.max(1, page - 1))}
         >
-          Prev
+          {t('app.previous')}
         </button>
         <span className="px-2">
-          Page {page} of {pageCount}
+          {t('app.page_of', { page, count: pageCount })}
         </span>
         <button
           type="button"
-          aria-label="Next page"
+          aria-label={t('app.next_page')}
           className={PAGE_BUTTON}
           disabled={disabled || page >= pageCount}
           onClick={() => onPageChange(Math.min(pageCount, page + 1))}
         >
-          Next
+          {t('app.next')}
         </button>
         <button
           type="button"
-          aria-label="Last page"
+          aria-label={t('app.last_page')}
           className={PAGE_BUTTON}
           disabled={disabled || page >= pageCount}
           onClick={() => onPageChange(pageCount)}

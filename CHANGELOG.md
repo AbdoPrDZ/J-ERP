@@ -61,6 +61,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   supports nested view folders (`views/pages/*`).
 - Unit test suite (`tests/`) with ORM/API compatibility tests.
 
+#### Internationalization
+
+- Flat `modules/<module>/i18n/<lang>.lang` catalogs (`key = value`) with a
+  scaffold/check/import CLI, plus the `sys.translation` runtime table imported
+  only on module install/update (files win).
+- Server-side translation of field labels/help/selection labels, model titles,
+  model descriptions, menu labels/descriptions and module summaries.
+- `@jerp/locale` with `t()`, `GET /api/i18n`, `POST /api/lang`, RTL direction and
+  a user-menu language selector; the shell, dashboard, shared table/form/card/
+  pagination components, command palette, login and core module pages use
+  translation keys without inline fallback text (the database manager stays
+  English-only).
+- Python messages use `_t('key', 'English source', **params)`; the scaffold
+  collects model/field/description/menu keys, Python `_t()` calls and UI `t()`
+  calls from `.ts`/`.tsx` files.
+- Per-user language preference via `sys.user.lang_id`, with `jerp_lang` as the
+  anonymous/session fallback.
+- New databases start with English as the only active language. Activating a
+  language through `sys.lang` loads that language's `.lang` files for every
+  installed module; module installs/updates only import active languages.
+- Database deletion now terminates the application's own sessions and, when
+  optional `databases.admin_user` credentials are configured, force-drops the
+  database even when pgAdmin or another superuser session is connected.
+- `i18n translate` CLI command: fills blank `.lang` values through Google
+  Translate for one module/language pair per run (Cloud API key or public
+  endpoint), with placeholder protection, dry-run, overwrite and configurable
+  request delay. `i18n import` also accepts a language filter.
+
 #### Modules
 
 - `sale` module with orders/lines, computed subtotal/total, product on-change,
@@ -81,6 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Home quick access and the `add_to_home` option were removed for now; the
   option is kept in manifests but ignored until the home layout is redesigned.
 - Seed/multilingual writes no longer re-enter `ensure_loaded` recursively.
+- The database manager page remains English-only because it renders before any
+  database/language catalog is available.
+- Database drops use the optional admin role for a forced `DROP DATABASE ...
+  WITH (FORCE)`; otherwise the error lists blocking pgAdmin/other sessions.
 
 ### Fixed
 

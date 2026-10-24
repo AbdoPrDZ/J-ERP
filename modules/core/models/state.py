@@ -5,6 +5,7 @@ class State(models.Model):
   """State/province reference data."""
 
   _name = 'sys.state'
+  _description = 'States or provinces belonging to a country.'
   _label = 'name'
 
   name = fields.StringField(

@@ -5,6 +5,7 @@ class SysData(models.Model):
   """External identifiers for records (similar to Odoo XML IDs)."""
 
   _name = 'sys.data'
+  _description = 'External identifiers for records.'
   _label = 'key'
   _track_refs = False
 

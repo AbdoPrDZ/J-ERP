@@ -145,8 +145,8 @@ export default function DbManager() {
 
         <div>
           <p className="max-w-2xl text-sm leading-relaxed text-slate-500">
-            Choose an isolated workspace to sign in, or create a new one. Modules,
-            data and users are kept separate per database.
+            Choose an isolated workspace to sign in, or create a new one.
+            Modules, data and users are kept separate per database.
           </p>
         </div>
 
@@ -179,7 +179,8 @@ export default function DbManager() {
                 Available databases
               </h2>
               <p className="text-xs text-slate-400">
-                Select a card to continue, or remove a workspace you no longer need.
+                Select a card to continue, or remove a workspace you no longer
+                need.
               </p>
             </div>
             <span className="text-xs text-slate-400">
@@ -431,7 +432,8 @@ function DeleteDatabaseModal({
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-slate-700">
             Type{' '}
-            <span className="whitespace-pre font-mono">{database}</span> to confirm
+            <span className="whitespace-pre font-mono">{database}</span> to
+            confirm
           </span>
           <input
             autoFocus

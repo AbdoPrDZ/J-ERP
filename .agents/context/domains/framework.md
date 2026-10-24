@@ -20,8 +20,8 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
 - `Environment()` with no arguments is a standalone convenience: it loads
   `jerp.config.json`, chooses `JERP_DATABASE`/the configured database/`J-ERP`/the
   only database, and supports `env['model']` mapping access.
-- Menu/page collection reads installed module names from `sys_module` on each
-  render, so an uninstall in another process disappears after a refresh.
+- Installed module names still come from `sys_module`; menus come from `sys.menu`
+  (synced on install/update) and translations from `sys.translation`.
 
 ### Models and fields
 
@@ -74,7 +74,10 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
 - `ModuleManager.discover()` reads `modules/*/configure.json` and imports the
   module packages so metaclasses register their models.
 - `install` resolves dependency order (`core` first), syncs the schema, records
-  `sys_module`, and builds views.
+  `sys_module`, builds views, synchronizes `sys.menu`, and imports `.lang` files
+  for active languages into `sys.translation`.
+- `update` re-syncs menus and active-language translations; `uninstall` removes
+  the module's menu/translation rows and drops its tables.
 - `Registry.preview()` plans a whole-database sync without applying it;
   `retired_fields()` lists retired columns. Request-path sync (`sync_dirty`)
   applies safe changes and declared renames but defers type changes and drops;
@@ -93,20 +96,41 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
 - `Request` exposes cookies, query, headers, body and JSON; `response` helpers
   build JSON, redirects, rendered pages and errors.
 
-### Views and pages
+### Views, menus and pages
 
 - Pages are declared in module manifests, not code. `jerp.views` collects pages,
-  menus and the view map; `jerp.routes` binds page endpoints to a handler that
-  enforces the login guard and renders the SPA shell.
-- Route options include `add_to_home` and `description`; `collect_home_pages`
-  builds the Home quick-access payload (hidden entries and groups included) from
-  installed modules only.
+  the view map and page metadata; `jerp.routes` binds page endpoints to a handler
+  that enforces the login guard and renders the SPA shell.
+- `jerp.menus` turns labelled, non-hidden route entries into `sys.menu` rows on
+  install/update, removes them on uninstall, and builds the nested tree read by
+  `GET /api/menu`. `add_to_home` and Home quick-access links are currently
+  removed.
 - `ViewRenderer` injects the import map and JSON payloads into the built shell
-  (`__JERP_VIEWS__`, `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_MENUS__`,
-  `__JERP_HOME__`, `__JERP_CONTEXT__`). `<!--jerp:head-->` and
-  `<!--jerp:body-->` markers in `public/index.html` are required for this.
-- In dev, `tools/vite-plugin-jerp.mjs` builds the same payload from disk but
-  filters modules using `GET /__modules` and the `jerp_db` cookie.
+  (`__JERP_VIEWS__`, `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_CONTEXT__`).
+  `@jerp/ui` and `@jerp/locale` both resolve to `/runtime.js`.
+  `<!--jerp:head-->` and `<!--jerp:body-->` markers in `public/index.html` are
+  required for this.
+- In dev, `tools/vite-plugin-jerp.mjs` builds the views/routes/pages payload from
+  disk but filters modules using `GET /__modules` and the `jerp_db` cookie.
+
+### Translation
+
+- `jerp.i18n` parses flat `.lang` files, imports active languages into
+  `sys.translation`, resolves user/cookie/default language, and exposes
+  `translate()` / `_t()` for Python messages.
+- `Model.field_schema()` and `view_descriptor()` translate labels, help,
+  selections, titles and descriptions from `model.<model>.*` keys. Menus and
+  module summaries are translated at read time.
+- `Language.write(active=True)` reloads that language's files for every installed
+  module. New databases seed English as the only active language.
+- `jerp.translate` contains the optional Google Translate client used by the CLI;
+  placeholders such as `{name}` are protected/restored.
+
+### Deletion protection
+
+- `Record.unlink()` checks every installed model for a many2one or file/image
+  field pointing at the record and raises a translated `ValueError` when found;
+  `delete_many()` wraps the batch in one transaction.
 
 ### Uploads
 

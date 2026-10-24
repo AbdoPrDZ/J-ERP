@@ -9,12 +9,13 @@ import {
   FormField,
   FormGroup,
 } from '@jerp/ui';
+import { t } from '@jerp/locale';
 
 export default function Languages() {
   return (
     <Page
       name="core.languages"
-      title="Languages"
+      title={t('view.core.languages.title')}
       model="sys.lang"
       searchBar
       create
@@ -23,21 +24,27 @@ export default function Languages() {
       views={['list', 'cards']}
     >
       <PageContent>
-        <Table model="sys.lang" emptyMessage="No languages found.">
+        <Table
+          model="sys.lang"
+          emptyMessage={t('view.core.languages.empty_message')}
+        >
           <TableField name="name" />
           <TableField name="code" />
           <TableField name="active" />
           <TableField name="is_default" />
         </Table>
 
-        <Cards model="sys.lang" emptyMessage="No languages found.">
+        <Cards
+          model="sys.lang"
+          emptyMessage={t('view.core.languages.empty_message')}
+        >
           <CardField name="name" />
           <CardField name="code"  />
           <CardField name="active" widget="badge" badge_colors={{ true: 'green', false: 'gray' }} />
           <CardField name="is_default" />
         </Cards>
 
-        <Form model="sys.lang" title="Language">
+        <Form model="sys.lang" title={t('view.core.languages.form_title')}>
           <FormField name="name" />
           <FormField name="code" />
           <FormField name="active" />

@@ -171,6 +171,22 @@ class Registry:
     )
     self._menus_ready = True
 
+  # --- translations -------------------------------------------------------
+
+  def _sync_i18n(self, module_names) -> None:
+    from jerp.i18n import I18nLoader
+
+    I18nLoader(self.db, Path(self.manager.config.modules_path)).sync_modules(
+      module_names, active_only=True
+    )
+
+  def _remove_i18n(self, module_name: str) -> None:
+    from jerp.i18n import I18nLoader
+
+    I18nLoader(self.db, Path(self.manager.config.modules_path)).remove_module(
+      module_name
+    )
+
   def init_models(self, allow_drop: bool = False):
     """Synchronize the schema of every built model."""
 
@@ -252,6 +268,7 @@ class Registry:
         self._apply_seeds()
         self._ensure_refs()
         self._sync_menus(order)
+        self._sync_i18n(order)
         return order
       except Exception:
         # Do not leave newly recorded modules behind if the build/sync fails.
@@ -263,6 +280,10 @@ class Registry:
             )
             try:
               self._remove_menus(module_name)
+            except Exception:
+              pass
+            try:
+              self._remove_i18n(module_name)
             except Exception:
               pass
         except Exception:
@@ -283,6 +304,7 @@ class Registry:
       self._apply_seeds()
       self._ensure_refs()
       self._sync_menus(targets)
+      self._sync_i18n(targets)
       return synced
 
   def uninstall(self, name: str) -> None:
@@ -293,6 +315,7 @@ class Registry:
       self.load()
       self.init_models()
       self._remove_menus(name)
+      self._remove_i18n(name)
 
   # --- accessors ----------------------------------------------------------
 

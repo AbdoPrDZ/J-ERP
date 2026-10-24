@@ -18,6 +18,7 @@ class SaleOrder(models.Model):
   """
 
   _name = 'sale.order'
+  _description = 'Customer sales orders and their totals.'
   _label = 'name'
 
   name = fields.StringField(

@@ -5,6 +5,7 @@ class Contact(models.Model):
   """Person/contact record (similar to Odoo's ``res.partner``)."""
 
   _name = 'sys.contact'
+  _description = 'People and organizations.'
   _label = 'name'
 
   name = fields.StringField(

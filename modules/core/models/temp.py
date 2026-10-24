@@ -9,6 +9,7 @@ class TempModel(models.Model):
   """
 
   _name = 'temp.model'
+  _description = 'Server-side drafts for forms and tables.'
   _label = 'model'
   _temporary = True
   _track_refs = False

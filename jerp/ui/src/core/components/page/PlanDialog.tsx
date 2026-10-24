@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import type { DataClient } from '../../model';
 import { Action, ActionContent, ActionFooter, ActionHeader } from './Action';
 
@@ -196,21 +197,21 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
 
   return (
     <Action
-      label="Schema plan"
+      label={t('plan.title')}
       open={Boolean(request)}
       onClose={applying ? undefined : onClose}
     >
-      <ActionHeader>Review schema changes</ActionHeader>
+      <ActionHeader>{t('plan.review')}</ActionHeader>
       <ActionContent>
         <p className="text-sm text-slate-600">
-          Updating{' '}
-          <span className="font-medium text-brand-navy">
-            {request?.label ?? 'the module'}
-          </span>{' '}
-          synchronizes the database schema. Nothing is changed until you apply.
+          {t('plan.intro', {
+            label: request?.label ?? t('plan.the_module'),
+          })}
         </p>
 
-        {loading ? <p className="text-sm text-slate-500">Loading plan…</p> : null}
+        {loading ? (
+          <p className="text-sm text-slate-500">{t('plan.loading')}</p>
+        ) : null}
 
         {error ? (
           <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -223,13 +224,13 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
             {changes.length > 0 ? (
               <PlanList changes={changes} tone="neutral" />
             ) : (
-              <p className="text-sm text-slate-500">No schema changes.</p>
+              <p className="text-sm text-slate-500">{t('plan.no_changes')}</p>
             )}
 
             {blocked.length > 0 ? (
               <div className="space-y-1">
                 <p className="text-sm font-medium text-red-700">
-                  Blocked ({blocked.length}) — these will be skipped:
+                  {t('plan.blocked', { count: blocked.length })}
                 </p>
                 <PlanList changes={blocked} tone="danger" />
               </div>
@@ -252,10 +253,7 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
                   disabled={applying}
                   onChange={(event) => setAllowDrop(event.target.checked)}
                 />
-                <span>
-                  Drop retired columns for the whole database. Columns are
-                  currently kept; dropping them permanently deletes their data.
-                </span>
+                <span>{t('plan.drop_retired')}</span>
               </label>
             ) : null}
 
@@ -268,10 +266,7 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
                   disabled={applying}
                   onChange={(event) => setConfirmed(event.target.checked)}
                 />
-                <span>
-                  I understand the columns listed above will be permanently
-                  deleted.
-                </span>
+                <span>{t('plan.confirm_destructive')}</span>
               </label>
             ) : null}
           </>
@@ -284,7 +279,7 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
           disabled={applying}
           onClick={onClose}
         >
-          Cancel
+          {t('app.cancel')}
         </button>
         <button
           type="button"
@@ -292,7 +287,7 @@ export function PlanDialog({ request, onClose, onApplied }: PlanDialogProps) {
           disabled={loading || applying || !plan || (destructive && !confirmed)}
           onClick={() => void apply()}
         >
-          {applying ? 'Applying…' : 'Apply'}
+          {applying ? t('plan.applying') : t('plan.apply')}
         </button>
       </ActionFooter>
     </Action>

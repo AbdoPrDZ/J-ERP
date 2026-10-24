@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import type { FieldDescriptor } from '../../types';
 
 export type FormErrors = Record<string, string>;
@@ -34,7 +35,7 @@ export function validateField(
   const missing = isMissing(field, value);
 
   if (field.required && missing && !field.has_default) {
-    return `${label} is required.`;
+    return t('validation.required', { label });
   }
   if (missing) {
     return null;
@@ -42,16 +43,16 @@ export function validateField(
 
   if (STRING_TYPES.has(field.ttype) && field.size) {
     if (String(value).length > field.size) {
-      return `${label} must be at most ${field.size} characters.`;
+      return t('validation.max_length', { label, size: field.size });
     }
   }
 
   if (INTEGER_TYPES.has(field.ttype) && !Number.isInteger(Number(value))) {
-    return `${label} must be a whole number.`;
+    return t('validation.integer', { label });
   }
 
   if (NUMBER_TYPES.has(field.ttype) && !Number.isFinite(Number(value))) {
-    return `${label} must be a number.`;
+    return t('validation.number', { label });
   }
 
   if (field.ttype === 'selection' && field.selection?.length) {
@@ -59,13 +60,13 @@ export function validateField(
       ([key]) => String(key) === String(value),
     );
     if (!valid) {
-      return `${label} has an invalid option.`;
+      return t('validation.invalid_option', { label });
     }
   }
 
   if (field.ttype === 'date' || field.ttype === 'timestamp') {
     if (Number.isNaN(Date.parse(String(value)))) {
-      return `${label} must be a valid date.`;
+      return t('validation.date', { label });
     }
   }
 
@@ -74,7 +75,7 @@ export function validateField(
     /email|e-mail/i.test(field.name) &&
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value))
   ) {
-    return `${label} must be a valid email address.`;
+    return t('validation.email', { label });
   }
 
   return null;

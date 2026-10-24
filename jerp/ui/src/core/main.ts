@@ -1,4 +1,5 @@
 import { viewsRegistry } from './registry';
+import { loadLocale } from './i18n';
 import { beginLoading, endLoading } from './loading';
 import { isLoggedIn, readJson, registerBuiltinUtils } from './utils';
 import { registerBuiltinFields } from './components/fields';
@@ -42,6 +43,8 @@ async function boot(): Promise<void> {
   const routes = readJson<Record<string, string>>('__JERP_ROUTES__', {});
   const pages = readJson<Record<string, PageMeta>>('__JERP_PAGES__', {});
   const baseContext = readJson<Record<string, unknown>>('__JERP_CONTEXT__', {});
+
+  await loadLocale();
 
   // Menu links and other internal anchors navigate without reloading the shell.
   configureSpaNavigation({ routes, baseContext });

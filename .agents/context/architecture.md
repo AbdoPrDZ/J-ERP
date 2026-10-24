@@ -50,10 +50,17 @@ assembled from a shared shell plus per-module view bundles.
   DDL transactionally (see `database.md`).
 - **`jerp.modules`** — discovers modules from `configure.json`, installs/updates/
   uninstalls them, and triggers view builds.
+- **`jerp.menus`** — synchronizes declared routes into `sys.menu` on
+  install/update and builds the nested menu tree for `GET /api/menu`.
+- **`jerp.i18n`** — parses `.lang` catalogs, imports them into
+  `sys.translation`, resolves the active user/session language and translates
+  Python/API strings (`_t`).
+- **`jerp.translate`** — Google Translate helpers used by the `i18n translate`
+  CLI, with placeholder protection.
 - **`jerp.http`** — router, request/response helpers, controller discovery,
   request-scoped database middleware.
 - **`jerp.views` / `jerp.routes`** — page declarations from module manifests,
-  menus, view rendering, and page-to-route binding.
+  view rendering, and page-to-route binding.
 - **`jerp.uploads` / `modules/core/controller`** — file upload and storage.
 
 Nothing connects to a database at startup. A database is selected per request
@@ -80,16 +87,21 @@ and its registry loaded on demand.
 
 - The server reads `data/ui/index.html` and injects:
   - an import map at `<!--jerp:head-->`: `react*` → `/react-runtime.js`,
-    `@jerp/ui` → `/runtime.js`
+    `@jerp/ui` and `@jerp/locale` → `/runtime.js`
   - JSON payload scripts at `<!--jerp:body-->`: `__JERP_VIEWS__`,
-    `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_MENUS__`, `__JERP_HOME__`,
-    `__JERP_CONTEXT__`
-- `__JERP_HOME__` is built from pages/groups flagged `add_to_home` in the
-  installed modules (hidden pages included). The Home view renders it as quick
-  access links; stats are computed from the installed models.
-- `jerp/ui/src/core/main.ts` reads those payloads, registers view URLs, resolves
-  the view from the element's `data-view`, the URL, or the route map, applies the
-  login guard, and mounts the React root.
+    `__JERP_ROUTES__`, `__JERP_PAGES__`, `__JERP_CONTEXT__`
+- Menus are not injected: the client fetches the active database's tree from
+  `GET /api/menu` (backed by `sys.menu`). Search models come from
+  `GET /api/models`; the UI catalog comes from `GET /api/i18n`.
+- `jerp/ui/src/core/main.ts` loads the locale catalog, reads those payloads,
+  registers view URLs, resolves the view from the element's `data-view`, the URL,
+  or the route map, applies the login guard, and mounts the React root.
+- SPA navigation (`navigation.ts`) intercepts same-origin anchors and
+  `navigateTo()` calls, updates history and remounts the view inside the shell.
+  `loading.ts` drives the top progress bar/spinner; the drawer and view
+  transitions are CSS-animated.
+- The Home dashboard shows live model counts. Quick-access links and the
+  `add_to_home` route option are currently removed.
 - `runtime.js` is built from `jerp/ui/src/core/runtime.ts` and re-exports the
   shared UI kit. `react-runtime.js` is generated from React's runtime keys so the
   shell and every module share one React instance.
@@ -99,8 +111,8 @@ and its registry loaded on demand.
 - In development, Vite serves the shell. `tools/vite-plugin-jerp.mjs` asks the
   backend for its URL prefixes via `GET /__endpoints`, then for each HTML request
   fetches `GET /__modules` with the browser's `jerp_db` cookie to inject only the
-  installed modules' views, pages, menus and home shortcuts. With no database or
-  an unreachable backend it exposes `core` only.
+  installed modules' views, routes and page metadata. With no database or an
+  unreachable backend it exposes `core` only.
 
 ## Model Runtime
 
@@ -125,8 +137,9 @@ and its registry loaded on demand.
 - A module is a directory under `modules/` containing `configure.json`
   (`name`, `version`, `summary`, `depends`, optional `logo`, `routes`).
 - `core` is the base module: always installed first, cannot be uninstalled, and
-  owns system models (`sys.module`, `sys.model`, `sys.field`, `sys.lang`,
-  `sys.contact`, `sys.user`, `sys.file`, `temp.model`).
+  owns system models (`sys.module`, `sys.model`, `sys.field`, `sys.menu`,
+  `sys.translation`, `sys.lang`, `sys.contact`, `sys.user`, `sys.file`,
+  `temp.model`).
 - Installation is **per database**: it synchronizes the module's models and
   records the module in that database's `sys_module`.
 - Modules may provide `controller/` (auto-discovered routes), `models/`, and

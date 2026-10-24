@@ -23,6 +23,7 @@ const EXTERNAL = [
   'react-dom/client',
   'react/jsx-runtime',
   '@jerp/ui',
+  '@jerp/locale',
 ];
 
 const modulesDir = path.resolve('modules');

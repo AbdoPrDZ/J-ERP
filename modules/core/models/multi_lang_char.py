@@ -5,6 +5,7 @@ class MultiLangChar(models.Model):
   """Translation of one character field for one record and language."""
 
   _name = 'sys.multi_lang_char'
+  _description = 'Translations of multi-language record fields.'
   _label = 'value'
 
   field_id = fields.Many2oneField(

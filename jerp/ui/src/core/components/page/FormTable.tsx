@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import { model } from '../../model';
 import type {
   DataClient,
@@ -223,8 +224,8 @@ function makeRowsClient(
 /** A table of related records backed by server-side drafts. */
 export function FormTable({
   model: childModel,
-  emptyMessage = 'No records.',
-  createLabel = 'Add',
+  emptyMessage = t('app.no_records'),
+  createLabel = t('app.add'),
   canCreate = true,
   canEdit = true,
   canDelete = true,
@@ -485,20 +486,22 @@ export function FormTable({
   if (!draftContext) {
     return (
       <p className="text-sm text-slate-500">
-        FormTable must be used inside a Form.
+        {t('app.form_table_requires_form')}
       </p>
     );
   }
 
   if (schema.length === 0) {
-    return <p className="text-sm text-slate-400">Loading…</p>;
+    return <p className="text-sm text-slate-400">{t('app.loading_text')}</p>;
   }
 
   if (!parentModel || !relationField || !client) {
     return (
       <p className="text-sm text-slate-500">
-        No relation field to &quot;{parentModel ?? 'the parent model'}&quot; was
-        found on {childModel}.
+        {t('app.form_table_missing_relation', {
+          parent: parentModel ?? t('app.parent_model'),
+          child: childModel,
+        })}
       </p>
     );
   }

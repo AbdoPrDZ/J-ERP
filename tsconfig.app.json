@@ -24,6 +24,7 @@
       "@/*": ["./jerp/ui/src/*"],
       "@jerp/ui": ["./jerp/ui/src/core/runtime.ts"],
       "@jerp/ui/*": ["./jerp/ui/src/core/*"],
+      "@jerp/locale": ["./jerp/ui/src/core/runtime.ts"],
       "@modules/*": ["./modules/*"]
     }
   },

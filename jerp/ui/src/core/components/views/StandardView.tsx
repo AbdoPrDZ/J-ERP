@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { api } from '../../api';
+import { t } from '../../i18n';
 import { viewRegistry } from './registry';
 import type { ActionDescriptor, RecordType, ViewDescriptor } from '../../types';
 
@@ -15,14 +16,16 @@ export function StandardView({ context }: { context: Record<string, unknown> }) 
   const [error, setError] = React.useState<string | null>(null);
 
   if (!view) {
-    return <p className="text-sm text-red-600">Missing view descriptor.</p>;
+    return (
+      <p className="text-sm text-red-600">{t('app.missing_view_descriptor')}</p>
+    );
   }
 
   const Component = viewRegistry.get(view.type);
   if (!Component) {
     return (
       <p className="text-sm text-red-600">
-        No component registered for view type “{view.type}”.
+        {t('app.missing_view_component', { type: view.type })}
       </p>
     );
   }

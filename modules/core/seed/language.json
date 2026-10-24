@@ -10,14 +10,14 @@
     "_key": "core.sys_lang_fr",
     "name": "French",
     "code": "fr",
-    "active": true,
+    "active": false,
     "is_default": false
   },
   {
     "_key": "core.sys_lang_ar",
     "name": "Arabic",
     "code": "ar",
-    "active": true,
+    "active": false,
     "is_default": false
   }
 ]

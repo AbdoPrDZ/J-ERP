@@ -1,13 +1,14 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import { model } from '../../model';
 import { navigateTo } from '../../utils';
 import { PageContext, type PageConfig } from './context';
 
 const VIEW_LABELS: Record<string, string> = {
-  list: 'List',
-  cards: 'Cards',
-  form: 'Form',
+  list: 'app.view.list',
+  cards: 'app.view.cards',
+  form: 'app.view.form',
 };
 
 export interface BreadcrumbItem {
@@ -125,7 +126,7 @@ export function Page({
     },
   ];
   if (editing && recordBreadcrumb) {
-    breadcrumb.push({ label: recordLabel ?? (id ? `#${id}` : 'New') });
+    breadcrumb.push({ label: recordLabel ?? (id ? `#${id}` : t('app.new')) });
   }
 
   const config: PageConfig = {
@@ -204,7 +205,7 @@ export function PageHeader({
               onClick={onCreate}
               className="rounded bg-brand-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-blue-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
             >
-              Create
+              {t('app.create')}
             </button>
           ) : null}
 
@@ -217,7 +218,7 @@ export function PageHeader({
           {searchBar ? (
             <input
               type="search"
-              placeholder="Search…"
+              placeholder={t('app.search')}
               className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
             />
           ) : null}
@@ -235,7 +236,7 @@ export function PageHeader({
                       : 'text-slate-500 hover:bg-brand-white hover:text-brand-navy'
                   }`}
                 >
-                  {VIEW_LABELS[type] ?? type}
+                  {VIEW_LABELS[type] ? t(VIEW_LABELS[type]) : type}
                 </button>
               ))}
             </div>

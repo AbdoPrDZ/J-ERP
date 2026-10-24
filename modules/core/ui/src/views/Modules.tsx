@@ -15,7 +15,7 @@ export default function Modules() {
   return (
     <Page
       name="core.modules"
-      title={t('core.modules.title')}
+      title={t('view.core.modules.title')}
       model="module"
       create={false}
       update={false}
@@ -23,27 +23,33 @@ export default function Modules() {
       views={['list', 'cards']}
     >
       <PageContent>
-        <Table model="module" emptyMessage={t('core.modules.empty_message')}>
+        <Table
+          model="module"
+          emptyMessage={t('view.core.modules.empty_message')}
+        >
           <TableField name="name" />
           <TableField name="version" />
           <TableField name="state" />
           <TableField name="summary" />
         </Table>
 
-        <Cards model="module" emptyMessage={t('core.modules.empty_message')}>
+        <Cards
+          model="module"
+          emptyMessage={t('view.core.modules.empty_message')}
+        >
           <CardField name="logo" />
           <CardField name="name" />
           <CardField name="state" widget="badge" badge_colors={{ installed: 'green', install_failed: 'red', not_installed: 'gray' }} />
         </Cards>
 
-        <Form model="module" title={t('core.modules.title')}>
+        <Form model="module" title={t('view.core.modules.title')}>
           <FormField name="logo" />
-          <FormGroup label="General">
+          <FormGroup label={t('view.core.modules.group_general')}>
             <FormField name="name" />
             <FormField name="version" />
             <FormField name="state" />
           </FormGroup>
-          <FormGroup label="Details">
+          <FormGroup label={t('view.core.modules.group_details')}>
             <FormField name="summary" />
             <FormField name="depends" />
           </FormGroup>

@@ -3,6 +3,7 @@ from jerp import fields, models
 
 class Product(models.Model):
   _name = 'stock.product'
+  _description = 'Products available for sale and stock.'
   _rename_from = 'product'
   _label = 'name'
 

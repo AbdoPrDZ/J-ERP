@@ -344,6 +344,9 @@ class BaseModel(metaclass=ModelMeta):
   #: exists, otherwise ``"<model>#<id>"``.
   _label: str | None = None
 
+  #: Short English description used in documentation and translation catalogs.
+  _description: str | None = None
+
   #: Previous model name, used to migrate an existing table when the model is
   #: renamed (e.g. ``'user'`` -> ``'sys.user'``).
   _rename_from: str | None = None
@@ -600,6 +603,8 @@ class BaseModel(metaclass=ModelMeta):
     the model's field order).
     """
 
+    from jerp import i18n
+
     selected = set(only) if only is not None else None
     schema: list[dict] = []
     for name, field in cls._fields.items():
@@ -607,9 +612,12 @@ class BaseModel(metaclass=ModelMeta):
         continue
       if selected is not None and name not in selected:
         continue
+      prefix = f'model.{cls._name}.field.{name}'
       entry: dict = {
         'name': name,
-        'label': field.name or name,
+        'label': i18n.translate(
+          f'{prefix}.label', field.name or name
+        ),
         'ttype': field.ttype,
         'required': bool(field.required),
         'readonly': bool(field.readonly),
@@ -620,7 +628,7 @@ class BaseModel(metaclass=ModelMeta):
       if name in getattr(cls, '_extension_fields', ()):
         entry['extension'] = True
       if field.help:
-        entry['help'] = field.help
+        entry['help'] = i18n.translate(f'{prefix}.help', field.help)
       size = getattr(field, 'size', None)
       if size:
         entry['size'] = int(size)
@@ -634,7 +642,13 @@ class BaseModel(metaclass=ModelMeta):
         entry['multi_language'] = True
       selection = getattr(field, 'selection', None)
       if selection:
-        entry['selection'] = [list(item) for item in selection]
+        entry['selection'] = [
+          [
+            value,
+            i18n.translate(f'{prefix}.selection.{value}', label),
+          ]
+          for value, label in selection
+        ]
       comodel = getattr(field, 'comodel', None)
       if comodel:
         entry['relation'] = comodel
@@ -649,13 +663,28 @@ class BaseModel(metaclass=ModelMeta):
     return None if spec is None else list(spec)
 
   @classmethod
+  def description(cls) -> str:
+    from jerp import i18n
+
+    return i18n.translate(
+      f'model.{cls._name}.description',
+      cls._description or '',
+    )
+
+  @classmethod
   def view_descriptor(cls, view_type: str) -> dict:
     """A standard view descriptor the client can render."""
+
+    from jerp import i18n
 
     return {
       'type': view_type,
       'model': cls._name,
-      'title': cls._name.replace('_', ' ').title(),
+      'title': i18n.translate(
+        f'model.{cls._name}.title',
+        cls._name.replace('.', ' ').replace('_', ' ').title(),
+      ),
+      'description': cls.description(),
       'fields': cls.field_schema(cls.view_fields(view_type)),
     }
 
@@ -1418,16 +1447,21 @@ class Model(BaseModel):
     if not references:
       return
 
+    from jerp.i18n import _t
+
     details = ', '.join(
       f"{reference['count']} "
       f"{reference['model'].split('.')[-1].replace('_', ' ')}"
       f"{'' if reference['count'] == 1 else 's'} via {reference['label']}"
       for reference in references
     )
-    raise ValueError(
-      f'Cannot delete {cls._name} "{cls.display_name(record)}": '
-      f'it is referenced by {details}.'
-    )
+    raise ValueError(_t(
+      'error.cannot_delete',
+      'Cannot delete {model} "{label}": it is referenced by {details}.',
+      model=cls._name,
+      label=cls.display_name(record),
+      details=details,
+    ))
 
   def unlink(self) -> bool:
     type(self)._assert_deletable(self)

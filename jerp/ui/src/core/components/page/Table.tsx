@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { model, type DataClient } from '../../model';
+import { t } from '../../i18n';
 import { formatValue, navigateTo } from '../../utils';
 import { fieldRegistry } from '../fields/registry';
 import { Pagination, PAGE_SIZES } from './Pagination';
@@ -111,7 +112,7 @@ function SelectionCheckbox({
 
 export function Table({
   model: modelName,
-  emptyMessage = 'No records.',
+  emptyMessage = t('app.no_records'),
   domain,
   client,
   inlineEdit,
@@ -507,7 +508,7 @@ export function Table({
                 disabled={inlineEdit.saving}
                 onClick={inlineEdit.onSave}
               >
-                {inlineEdit.saving ? 'Saving…' : 'Save'}
+                {inlineEdit.saving ? t('app.saving') : t('app.save')}
               </button>
               <button
                 type="button"
@@ -515,7 +516,7 @@ export function Table({
                 disabled={inlineEdit.saving}
                 onClick={inlineEdit.onCancel}
               >
-                Cancel
+                {t('app.cancel')}
               </button>
             </div>
           </td>
@@ -539,7 +540,7 @@ export function Table({
       {selectable && selected.size > 0 ? (
         <div className="flex flex-none flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 px-3 py-2 text-sm">
           <span className="font-medium text-brand-navy">
-            {selected.size} selected
+            {t('app.selected', { count: selected.size })}
           </span>
           <div className="flex items-center gap-2">
             {selectionActions ? selectionActions(Array.from(selected)) : null}
@@ -550,7 +551,7 @@ export function Table({
                 disabled={bulkBusy}
                 onClick={() => void deleteSelected()}
               >
-                {bulkBusy ? 'Deleting…' : 'Delete'}
+                {bulkBusy ? t('app.deleting') : t('app.delete')}
               </button>
             ) : null}
           </div>
@@ -572,7 +573,7 @@ export function Table({
                     checked={allPageSelected}
                     indeterminate={!allPageSelected && somePageSelected}
                     onChange={togglePage}
-                    label="Select all rows on this page"
+                    label={t('app.select_all')}
                   />
                 </th>
               ) : null}

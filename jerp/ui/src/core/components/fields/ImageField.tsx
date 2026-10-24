@@ -4,6 +4,7 @@ import { api } from '../../api';
 import { model } from '../../model';
 import { uploadFile } from '../../utils';
 import type { FieldProps } from './registry';
+import { t } from '../../i18n';
 
 interface Confirmed {
   id: number;
@@ -81,7 +82,7 @@ export function ImageField({ value, onChange, readonly }: FieldProps) {
           onChange={pick}
           className="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700"
         />
-        {busy ? <span className="block text-xs text-slate-500">Uploading…</span> : null}
+        {busy ? <span className="block text-xs text-slate-500">{t('app.image_field.uploading')}</span> : null}
         {name ? <span className="block text-xs text-slate-600">{name}</span> : null}
         {error ? <span className="block text-xs text-red-600">{error}</span> : null}
       </div>

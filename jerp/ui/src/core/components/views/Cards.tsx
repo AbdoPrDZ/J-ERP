@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { RecordActions } from './actions';
 import { formatValue } from '../../utils';
 import type { StandardViewProps } from '../../types';
@@ -36,7 +37,7 @@ export function CardsView({ view, records, onAction, busy }: StandardViewProps) 
         </div>
       ))}
       {records.length === 0 ? (
-        <p className="text-sm text-slate-400">No records.</p>
+        <p className="text-sm text-slate-400">{t('app.no_records')}</p>
       ) : null}
     </div>
   );

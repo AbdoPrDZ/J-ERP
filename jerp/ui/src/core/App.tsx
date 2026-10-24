@@ -5,6 +5,7 @@ import { isLoggedIn, readJson } from './utils';
 import { api } from './api';
 import { model } from './model';
 import { MenuSearch } from './components/MenuSearch';
+import { t, useLocale } from './i18n';
 import { useLoading } from './loading';
 import { useMenu, type MenuItem } from './menu';
 import { openHref } from './navigation';
@@ -125,6 +126,7 @@ function currentUsername(): string {
 }
 
 function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => void }) {
+  const { lang, languages, setLanguage } = useLocale();
   const [user, setUser] = React.useState<UserMenuUser | null>(null);
   const [path, setPath] = React.useState<string | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -184,20 +186,40 @@ function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => vo
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-44 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-52 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+          {languages.length > 1 ? (
+            <div className="border-b border-slate-100 px-3 py-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                {t('app.language')}
+              </label>
+              <select
+                value={lang}
+                onChange={(event) => {
+                  void setLanguage(event.target.value);
+                }}
+                className="mt-1 w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm text-slate-700 focus:border-brand-blue focus:outline-none"
+              >
+                {languages.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <a
             href="/view?name=core.profile"
             onClick={() => setOpen(false)}
             className="block px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
           >
-            Profile
+            {t('app.profile')}
           </a>
           <button
             type="button"
             onClick={onLogout}
             className="block w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50"
           >
-            Logout
+            {t('app.logout')}
           </button>
         </div>
       ) : null}
@@ -346,7 +368,7 @@ export function App({ viewKey, context, view: View }: AppProps) {
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="Navigation"
+            aria-label={t('app.navigation')}
             className={`relative z-10 h-full w-64 overflow-y-auto bg-gradient-to-b from-brand-navy to-brand-navy-soft text-white shadow-xl transition-transform duration-300 ease-out will-change-transform ${
               drawerOpen ? 'translate-x-0' : '-translate-x-full'
             }`}
@@ -402,7 +424,7 @@ export function App({ viewKey, context, view: View }: AppProps) {
           {showDrawer ? (
             <button
               type="button"
-              aria-label="Menu"
+              aria-label={t('app.menu')}
               onClick={openDrawer}
               className="rounded px-2 py-0.5 text-base leading-none text-white/80 transition-all duration-150 hover:scale-110 hover:bg-white/10 hover:text-white active:scale-95"
             >
@@ -411,7 +433,7 @@ export function App({ viewKey, context, view: View }: AppProps) {
           ) : null}
           <span className="text-base font-semibold tracking-tight">J-ERP</span>
           <span
-            aria-label={loading ? 'Loading' : undefined}
+            aria-label={loading ? t('app.loading') : undefined}
             aria-hidden={!loading}
             role={loading ? 'status' : undefined}
             className={`h-3.5 w-3.5 rounded-full border-2 border-white/25 border-t-brand-cyan transition-opacity duration-200 ${

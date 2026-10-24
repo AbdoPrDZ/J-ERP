@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import { model } from '../../model';
 import type { DraftRecord } from '../../model';
 import { DraftContext } from '../page/context';
@@ -120,7 +121,7 @@ export function Many2oneField({ field, value, onChange, readonly }: FieldProps) 
       <option value="">-</option>
       {!known && current ? <option value={current}>#{current}</option> : null}
       {drafts.length > 0 ? (
-        <optgroup label="Drafts">
+        <optgroup label={t('app.drafts')}>
           {drafts.map((draft) => {
             const label =
               String(
@@ -130,7 +131,7 @@ export function Many2oneField({ field, value, onChange, readonly }: FieldProps) 
               );
             return (
               <option key={`draft-${draft.id}`} value={`draft:${draft.id}`}>
-                {label} (draft)
+                {label} {t('app.draft_suffix')}
               </option>
             );
           })}

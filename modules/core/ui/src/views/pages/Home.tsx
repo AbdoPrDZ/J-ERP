@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { model } from '@jerp/ui';
+import { model, t } from '@jerp/ui';
 
 interface StatDef {
   key: string;
   module: string;
   model: string;
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
   tone: string;
 }
 
@@ -15,32 +15,32 @@ const STAT_DEFS: StatDef[] = [
     key: 'contacts',
     module: 'core',
     model: 'sys.contact',
-    label: 'Contacts',
-    description: 'People and organisations',
+    labelKey: 'home.stats.contacts.label',
+    descriptionKey: 'home.stats.contacts.description',
     tone: 'bg-brand-cyan',
   },
   {
     key: 'orders',
     module: 'sale',
     model: 'sale.order',
-    label: 'Sales orders',
-    description: 'Quotes and confirmations',
+    labelKey: 'home.stats.orders.label',
+    descriptionKey: 'home.stats.orders.description',
     tone: 'bg-brand-blue',
   },
   {
     key: 'products',
     module: 'stock',
     model: 'stock.product',
-    label: 'Products',
-    description: 'Items in the catalogue',
+    labelKey: 'home.stats.products.label',
+    descriptionKey: 'home.stats.products.description',
     tone: 'bg-emerald-400',
   },
   {
     key: 'users',
     module: 'core',
     model: 'sys.user',
-    label: 'Users',
-    description: 'Workspace accounts',
+    labelKey: 'home.stats.users.label',
+    descriptionKey: 'home.stats.users.description',
     tone: 'bg-slate-400',
   },
 ];
@@ -115,14 +115,13 @@ export default function Home({ context }: { context: Record<string, unknown> }) 
         <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-brand-cyan">
-              Workspace overview
+              {t('home.overview')}
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Welcome back{user ? `, ${user}` : ''}.
+              {t('home.welcome')}{user ? `, ${user}` : ''}.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/70">
-              Everything important in one place — contacts, sales, stock and your
-              workspace configuration.
+              {t('home.subtitle')}
             </p>
           </div>
 
@@ -140,7 +139,7 @@ export default function Home({ context }: { context: Record<string, unknown> }) 
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                    {stat.label}
+                    {t(stat.labelKey)}
                   </p>
                   <span className={`h-2.5 w-2.5 rounded-full ${stat.tone}`} />
                 </div>
@@ -148,7 +147,9 @@ export default function Home({ context }: { context: Record<string, unknown> }) 
                   {value === undefined || value === null ? '—' : value}
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  {value === null ? 'Not available' : stat.description}
+                  {value === null
+                    ? t('app.not_available')
+                    : t(stat.descriptionKey)}
                 </p>
               </div>
             );

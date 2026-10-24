@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Page, PageContent, Form, FormField, FormGroup, model } from '@jerp/ui';
+import { Page, PageContent, Form, FormField, FormGroup, model, t } from '@jerp/ui';
 
 function currentUsername(): string {
   const match = document.cookie.match(/(?:^|;\s*)jerp_user=([^;]+)/);
@@ -36,7 +36,7 @@ export default function Profile() {
   return (
     <Page
       name="core.profile"
-      title="Profile"
+      title={t('view.core.profile.title')}
       model="sys.user"
       searchBar={false}
       create={false}
@@ -46,10 +46,15 @@ export default function Profile() {
     >
       <PageContent>
         {userId ? (
-          <Form model="sys.user" title="Profile" recordId={userId}>
-            <FormGroup label="Profile">
+          <Form
+            model="sys.user"
+            title={t('view.core.profile.form_title')}
+            recordId={userId}
+          >
+            <FormGroup label={t('view.core.profile.group_profile')}>
               <FormField name="name" />
               <FormField name="image" />
+              <FormField name="lang_id" />
             </FormGroup>
           </Form>
         ) : null}

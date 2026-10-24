@@ -5,6 +5,7 @@ class SysMenu(models.Model):
   """Navigation entries synchronized from the installed modules."""
 
   _name = 'sys.menu'
+  _description = 'Navigation entries synchronized from installed modules.'
   _label = 'label'
   _track_refs = False
 

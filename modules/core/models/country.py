@@ -5,6 +5,7 @@ class Country(models.Model):
   """Country reference data."""
 
   _name = 'sys.country'
+  _description = 'Countries and related reference data.'
   _label = 'name'
 
   name = fields.StringField(

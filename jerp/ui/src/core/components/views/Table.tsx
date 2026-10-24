@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { RecordActions } from './actions';
 import { formatValue } from '../../utils';
 import type { StandardViewProps } from '../../types';
@@ -50,7 +51,7 @@ export function TableView({ view, records, onAction, busy }: StandardViewProps) 
                 colSpan={columns.length + 1}
                 className="px-4 py-6 text-center text-slate-400"
               >
-                No records.
+                {t('app.no_records')}
               </td>
             </tr>
           ) : null}

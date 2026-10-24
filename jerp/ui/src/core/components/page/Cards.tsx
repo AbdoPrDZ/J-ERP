@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import { model } from '../../model';
 import { formatValue, navigateTo } from '../../utils';
 import { Pagination, PAGE_SIZES } from './Pagination';
@@ -125,7 +126,7 @@ function CardImage({
 /** Cards over a model's records; fields come from ``CardField`` children. */
 export function Cards({
   model: modelName,
-  emptyMessage = 'No records.',
+  emptyMessage = t('app.no_records'),
   onCardClick,
   children,
 }: CardsProps) {

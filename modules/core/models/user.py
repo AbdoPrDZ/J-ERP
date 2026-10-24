@@ -5,6 +5,7 @@ HASH_PREFIX = 'pbkdf2_sha256$'
 
 class User(models.Model):
   _name = 'sys.user'
+  _description = 'Workspace user accounts and their preferences.'
 
   #: ``name`` is the display name; ``username`` is used to log in.
   name = fields.StringField(
@@ -26,6 +27,11 @@ class User(models.Model):
   image = fields.ImageField(
     name='Avatar',
     help='Profile image for this user.',
+  )
+  lang_id = fields.Many2oneField(
+    'sys.lang',
+    name='Language',
+    help='Preferred UI language. Empty uses the session or system default.',
   )
 
   @staticmethod

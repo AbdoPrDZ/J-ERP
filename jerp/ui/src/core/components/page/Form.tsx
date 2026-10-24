@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { t } from '../../i18n';
 import { model, type DraftChange, type DraftRecord } from '../../model';
 import { clearDraftToken, draftToken, DraftQueue } from '../../draft';
 import { FieldHelp } from '../fields/FieldHelp';
@@ -12,7 +13,7 @@ import {
   type DraftQueueHandle,
 } from './context';
 import { validateValues, type FormErrors } from './validation';
-import { Action, isAction, type ActionProps } from './Action';
+import { isAction, type ActionProps } from './Action';
 import { autoModelFields, useModelFields } from './useModelFields';
 
 export interface FormFieldProps {
@@ -149,7 +150,7 @@ function ActionMenu({
     <div className="relative">
       <button
         type="button"
-        aria-label="Actions"
+        aria-label={t('app.actions')}
         onClick={() => setOpen((value) => !value)}
         className="rounded px-2 py-1 text-lg leading-none text-slate-500 hover:bg-slate-100"
       >
@@ -635,7 +636,7 @@ export function Form({
                 disabled={busy || loading}
                 onClick={() => void discard()}
               >
-                Discard
+                {t('app.discard')}
               </button>
             ) : null}
             {!isReadonly ? (
@@ -645,7 +646,11 @@ export function Form({
                 disabled={busy || loading || !draft}
                 onClick={() => void submit()}
               >
-                {busy ? 'Saving…' : loading ? 'Loading…' : 'Save'}
+                {busy
+                  ? t('app.saving')
+                  : loading
+                    ? t('app.loading_text')
+                    : t('app.save')}
               </button>
             ) : null}
           </div>
@@ -680,7 +685,7 @@ export function Form({
           {autoFields.length > 0 ? (
             <fieldset className="rounded-lg border border-slate-200 p-4 md:col-span-2">
               <legend className="px-1 text-sm font-medium text-brand-navy">
-                Additional fields
+                {t('app.additional_fields')}
               </legend>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {autoFields.map((field, index) =>

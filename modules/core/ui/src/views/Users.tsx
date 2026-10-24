@@ -17,6 +17,7 @@ import {
   RecordContext,
   model,
 } from '@jerp/ui';
+import { t } from '@jerp/locale';
 
 /** Self-contained modal content for the "Change Password" action. */
 function ChangePassword() {
@@ -45,7 +46,7 @@ function ChangePassword() {
 
   return (
     <>
-      <ActionHeader>Change Password</ActionHeader>
+      <ActionHeader>{t('view.core.users.change_password')}</ActionHeader>
       <ActionContent>
         {error ? (
           <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -54,7 +55,7 @@ function ChangePassword() {
         ) : null}
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-brand-navy">
-            New password
+            {t('view.core.users.new_password')}
           </span>
           <input
             type="password"
@@ -71,7 +72,7 @@ function ChangePassword() {
           onClick={() => action?.close()}
           disabled={busy}
         >
-          Cancel
+          {t('app.cancel')}
         </button>
         <button
           type="button"
@@ -79,7 +80,7 @@ function ChangePassword() {
           onClick={() => void submit()}
           disabled={busy || !password}
         >
-          {busy ? 'Saving…' : 'Save'}
+          {busy ? t('app.saving') : t('app.save')}
         </button>
       </ActionFooter>
     </>
@@ -90,7 +91,7 @@ export default function Users() {
   return (
     <Page
       name="core.users"
-      title="Users"
+      title={t('view.core.users.title')}
       model="sys.user"
       searchBar
       create
@@ -100,23 +101,30 @@ export default function Users() {
       views={['list', 'cards']}
     >
       <PageContent>
-        <Table model="sys.user" emptyMessage="No users found.">
+        <Table
+          model="sys.user"
+          emptyMessage={t('view.core.users.empty_message')}
+        >
           <TableField name="name" />
         </Table>
 
-        <Cards model="sys.user" emptyMessage="No users found.">
+        <Cards
+          model="sys.user"
+          emptyMessage={t('view.core.users.empty_message')}
+        >
           <CardField name="avatar" />
           <CardField name="name" />
         </Cards>
 
-        <Form model="sys.user" title="User">
-          <Action label="Change Password">
+        <Form model="sys.user" title={t('view.core.users.form_title')}>
+          <Action label={t('view.core.users.change_password')}>
             <ChangePassword />
           </Action>
 
           <FormField name="name" />
           <FormField name="username" />
           <FormField name="image" />
+          <FormField name="lang_id" />
         </Form>
       </PageContent>
     </Page>

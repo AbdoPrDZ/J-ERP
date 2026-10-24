@@ -43,6 +43,21 @@ def is_valid_database_name(name: str) -> bool:
   return len(name.encode('utf-8')) <= MAX_DATABASE_NAME_BYTES
 
 
+class DatabaseInUseError(RuntimeError):
+  """A database still has connections that cannot be terminated."""
+
+  def __init__(self, name: str, sessions: list[dict], admin_error=None):
+    self.name = name
+    self.sessions = sessions
+    self.admin_error = admin_error
+    details = ', '.join(
+      f"{row.get('usename') or '?'} "
+      f"({row.get('application_name') or 'unknown client'})"
+      for row in sessions
+    )
+    super().__init__(f'Database "{name}" is in use by: {details}.')
+
+
 class Database:
   """A single PostgreSQL database plus its connection pool."""
 
@@ -179,10 +194,13 @@ class DatabaseManager:
 
   # --- administration -----------------------------------------------------
 
-  def _admin_connection(self, database: str = 'postgres'):
-    return psycopg.connect(
-      self.config.dsn(database), autocommit=True, row_factory=dict_row
+  def _admin_connection(self, database: str = 'postgres', elevated: bool = False):
+    dsn = (
+      self.config.databases.admin_dsn(database)
+      if elevated and self.config.databases.has_admin
+      else self.config.dsn(database)
     )
+    return psycopg.connect(dsn, autocommit=True, row_factory=dict_row)
 
   def list_databases(self, owner: str | None = None) -> list[str]:
     """Databases owned by ``owner``.
@@ -244,11 +262,48 @@ class DatabaseManager:
     if database is not None:
       database.close()
     self._registries.pop(name, None)
+
+    admin_error = None
+    if self.config.databases.has_admin:
+      # A superuser can terminate every session, including pgAdmin's.
+      try:
+        with self._admin_connection(elevated=True) as conn:
+          with conn.cursor() as cur:
+            cur.execute(
+              f'DROP DATABASE IF EXISTS {quote_ident(name)} WITH (FORCE)'
+            )
+        self.invalidate_catalog()
+        return
+      except Exception as exc:
+        admin_error = exc
+
     with self._admin_connection() as conn:
       with conn.cursor() as cur:
+        # Close sessions owned by the application role first. Sessions owned by
+        # another role (for example a superuser pgAdmin connection) can only be
+        # terminated by that role or a superuser.
         cur.execute(
-          f'DROP DATABASE IF EXISTS {quote_ident(name)} WITH (FORCE)'
+          'SELECT pid, usename, application_name FROM pg_stat_activity '
+          'WHERE datname = %s AND pid <> pg_backend_pid()',
+          [name],
         )
+        for session in cur.fetchall():
+          try:
+            cur.execute('SELECT pg_terminate_backend(%s)', [session['pid']])
+          except Exception:
+            pass
+
+        cur.execute(
+          'SELECT pid, usename, application_name FROM pg_stat_activity '
+          'WHERE datname = %s AND pid <> pg_backend_pid()',
+          [name],
+        )
+        remaining = cur.fetchall()
+        if remaining:
+          raise DatabaseInUseError(name, remaining, admin_error=admin_error)
+
+        cur.execute(f'DROP DATABASE IF EXISTS {quote_ident(name)}')
+
     self.invalidate_catalog()
 
   def duplicate(self, source: str, target: str) -> str:

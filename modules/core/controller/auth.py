@@ -1,3 +1,4 @@
+from jerp import i18n
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
@@ -31,15 +32,43 @@ class AuthController(controller.Controller):
     users = User.search([('username', '=', username)], limit=1) if username else []
     if not users or not users[0].check_password(password):
       return response.json(
-        {'error': 'invalid_credentials', 'message': 'Invalid username or password.'},
+        {
+          'error': 'invalid_credentials',
+          'message': i18n._t(
+            'error.invalid_credentials',
+            'Invalid username or password.',
+          ),
+        },
         status=401,
       )
 
     user = users[0]
-    result = response.json({'user': user.name or user.username})
+    lang_id = user.read(['lang_id']).get('lang_id')
+    language = None
+    Language = registry.get('sys.lang')
+    if lang_id and Language is not None:
+      rows = Language.browse(lang_id)
+      if rows and rows[0].active:
+        language = rows[0].code
+
+    if not language:
+      req = request.current()
+      cookie = req.cookies.get('jerp_lang') if req else None
+      if cookie and i18n.find_language(cookie):
+        language = cookie
+        if not lang_id:
+          i18n.save_user_language(user.username, cookie)
+    if not language:
+      language = i18n.current_language()
+
+    result = response.json({
+      'user': user.name or user.username,
+      'lang': language,
+    })
     result.headers['Set-Cookie'] = (
       f'jerp_user={user.username}; Path=/; SameSite=Lax'
     )
+    result.headers['Cache-Control'] = 'no-store'
     return result
 
   @router.post('/logout')

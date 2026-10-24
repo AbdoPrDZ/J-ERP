@@ -29,20 +29,39 @@ class DatabaseConfig:
     #: Restrict the database list to databases owned by this role (defaults to
     #: the connected role when unset).
     self.owner = os.environ.get('JERP_DB_OWNER', data.get('owner'))
+    #: Optional superuser role used only to force-drop databases.
+    self.admin_user = os.environ.get(
+      'JERP_DB_ADMIN_USER', data.get('admin_user')
+    )
+    self.admin_password = os.environ.get(
+      'JERP_DB_ADMIN_PASSWORD', data.get('admin_password')
+    )
 
-  def dsn(self, database: str) -> str:
+  def dsn(self, database: str, user: str | None = None, password: str | None = None) -> str:
     params = {
       'host': self.host,
       'port': str(self.port),
-      'user': self.user,
+      'user': user or self.user,
       'dbname': database,
       'connect_timeout': str(self.connect_timeout),
     }
-    if self.password:
-      params['password'] = self.password
+    secret = self.password if password is None else password
+    if secret:
+      params['password'] = secret
     if self.sslmode:
       params['sslmode'] = self.sslmode
     return make_conninfo(**params)
+
+  @property
+  def has_admin(self) -> bool:
+    return bool(self.admin_user)
+
+  def admin_dsn(self, database: str) -> str:
+    return self.dsn(
+      database,
+      user=self.admin_user,
+      password=self.admin_password,
+    )
 
 
 class Config:

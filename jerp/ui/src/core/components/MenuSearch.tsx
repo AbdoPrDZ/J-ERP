@@ -1,6 +1,7 @@
 import * as React from 'react';
 
 import { api } from '../api';
+import { t } from '../i18n';
 import type { MenuItem } from '../menu';
 import { useAvailableModels } from '../models';
 
@@ -361,12 +362,12 @@ export function MenuSearch({
 
   const placeholder =
     parsed.mode === 'menu'
-      ? 'Search menus…'
+      ? t('search.placeholder.menu')
       : parsed.mode === 'model'
-        ? 'Search models…'
+        ? t('search.placeholder.model')
         : parsed.mode === 'record'
-          ? `Search ${parsed.model} records…`
-          : 'Search menus or models…';
+          ? t('search.placeholder.record', { model: parsed.model ?? '' })
+          : t('search.placeholder.all');
 
   const modelButtonRef = (index: number) =>
     active === index ? activeRef : undefined;
@@ -384,7 +385,7 @@ export function MenuSearch({
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
-          aria-label="Search menus and records"
+          aria-label={t('search.aria')}
           autoFocus
           spellCheck={false}
           className="w-full rounded-lg border border-white/15 bg-white/10 py-2 pl-8 pr-16 text-sm text-white placeholder:text-white/35 focus:border-brand-cyan focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
@@ -395,8 +396,8 @@ export function MenuSearch({
       </div>
 
       <p className="px-1 text-[11px] text-white/35">
-        <span className="text-white/55">/</span> menus ·{' '}
-        <span className="text-white/55">@</span> records
+        <span className="text-white/55">/</span> {t('search.menus')} ·{' '}
+        <span className="text-white/55">@</span> {t('search.records')}
       </p>
 
       {showPanel ? (
@@ -415,19 +416,19 @@ export function MenuSearch({
                   }}
                   className="rounded px-1.5 py-0.5 text-[11px] text-white/50 hover:bg-white/10 hover:text-white"
                 >
-                  Change
+                  {t('search.change')}
                 </button>
               </div>
               <p className="mt-0.5 text-[11px] text-white/35">
                 {recordText
-                  ? 'Matching records by name.'
-                  : 'Type a name to search records.'}
+                  ? t('search.record_hint')
+                  : t('search.record_empty')}
               </p>
             </div>
           ) : null}
 
           {parsed.mode === 'model' ? (
-            <Section title="Models">
+            <Section title={t('search.models')}>
               {modelTargets.length > 0 ? (
                 modelTargets.map((target, index) => (
                   <ResultButton
@@ -436,26 +437,28 @@ export function MenuSearch({
                     icon="@"
                     title={target.name}
                     subtitle={modelLabel(target.name)}
-                    hint="Select"
+                    hint={t('search.select')}
                     buttonRef={modelButtonRef(index)}
                     onClick={() => chooseModel(target.name)}
                   />
                 ))
               ) : (
                 <p className="px-3 py-2 text-xs text-white/40">
-                  No models match.
+                  {t('search.no_models')}
                 </p>
               )}
             </Section>
           ) : parsed.mode === 'record' ? (
-            <Section title="Records">
+            <Section title={t('search.records')}>
               {loading ? (
-                <p className="px-3 py-2 text-xs text-white/40">Searching…</p>
+                <p className="px-3 py-2 text-xs text-white/40">
+                  {t('search.searching')}
+                </p>
               ) : error ? (
                 <p className="px-3 py-2 text-xs text-red-300">{error}</p>
               ) : !recordText ? (
                 <p className="px-3 py-2 text-xs text-white/40">
-                  Type a name to search {parsed.model} records.
+                  {t('search.record_type', { model: parsed.model ?? '' })}
                 </p>
               ) : records.length > 0 ? (
                 records.map((target, index) => (
@@ -465,20 +468,20 @@ export function MenuSearch({
                     icon="›"
                     title={target.label}
                     subtitle={`@${target.model}`}
-                    hint="Open"
+                    hint={t('search.open')}
                     buttonRef={modelButtonRef(index)}
                     onClick={() => activate(target)}
                   />
                 ))
               ) : (
                 <p className="px-3 py-2 text-xs text-white/40">
-                  No records found.
+                  {t('search.no_records')}
                 </p>
               )}
             </Section>
           ) : (
             <>
-              <Section title="Menus">
+              <Section title={t('search.menus')}>
                 {menuTargets.length > 0 ? (
                   menuTargets.map((target, index) => (
                     <ResultButton
@@ -487,20 +490,24 @@ export function MenuSearch({
                       icon="↗"
                       title={target.label}
                       subtitle={target.path}
-                      hint="Open"
+                      hint={t('search.open')}
                       buttonRef={modelButtonRef(index)}
                       onClick={() => activate(target)}
                     />
                   ))
                 ) : (
                   <p className="px-3 py-2 text-xs text-white/40">
-                    No menus match.
+                    {t('search.no_menus')}
                   </p>
                 )}
               </Section>
 
               {modelTargets.length > 0 ? (
-                <Section title={`Models (${parsed.text ? 'matching' : '@'})`}>
+                <Section
+                  title={`${t('search.models')} (${
+                    parsed.text ? t('search.matching') : '@'
+                  })`}
+                >
                   {modelTargets.map((target, index) => {
                     const position = menuTargets.length + index;
                     return (
@@ -510,7 +517,7 @@ export function MenuSearch({
                         icon="@"
                         title={target.name}
                         subtitle={modelLabel(target.name)}
-                        hint="Search"
+                        hint={t('search.search')}
                         buttonRef={modelButtonRef(position)}
                         onClick={() => chooseModel(target.name)}
                       />

@@ -6,6 +6,9 @@
   normalizes `information_schema` results; identifiers are always quoted.
 - Connections are configured in `jerp.config.json` (`databases.host/port/user/
   password/sslmode/owner`) and overridden by `JERP_DB_*` environment variables.
+  Optional `databases.admin_user` / `admin_password` (or
+  `JERP_DB_ADMIN_USER` / `JERP_DB_ADMIN_PASSWORD`) provide a superuser used only
+  to force-drop databases; never commit the real password.
 - The target schema defaults to `public` (`schema` in config).
 - One PostgreSQL **database per tenant/workspace** is the core design. Each has
   its own installed modules and therefore its own table/field set.
@@ -57,6 +60,8 @@
 - Computed fields keep their column; stored values are recomputed by the model
   runtime. Optional computed fields are nullable.
 - `core` is always installed first and owns the system tables.
+- `_description` on a model is a short English source string used by the
+  translation scaffold and `Model.description()`; it is not a column.
 
 ## Standard Columns And Naming
 
@@ -70,6 +75,35 @@
   record reads (used for passwords).
 - The API accepts an underscore alias for dotted model names
   (`sys_module` → `sys.module`).
+
+## Menus And Translations
+
+- `sys.menu` stores the visible navigation tree per database. Rows are replaced
+  from a module's `configure.json` routes on install/update, removed on uninstall,
+  and read by `GET /api/menu`. `parent_id` models groups; `code` is the stable
+  declaration path.
+- `sys.translation` stores UI/metadata catalogs keyed by `lang_id`, `module`,
+  logical `key`, unique `code` (`<lang>:<key>`) and `value`. Install/update
+  imports only currently active languages; activating a language reloads that
+  language's `modules/<module>/i18n/<lang>.lang` files for all installed modules.
+- `sys.user.lang_id` stores each user's preferred language. Runtime resolution:
+  user language -> `jerp_lang` cookie -> `sys.lang.is_default` -> `en`.
+- `sys.lang.active` defaults to `False` for new languages; new databases seed
+  only English as active. `Language.write(active=True)` triggers the module
+  translation reload.
+- Existing `sys.multi_lang_char` remains for multi-language **record values**;
+  `sys.translation` is for UI and model metadata strings.
+
+## Deletion Protection
+
+- `Record.unlink()` refuses to delete a record still referenced through a
+  many2one or `FileField`/`ImageField`; the error names the referencing model and
+  field. `delete_many()` runs in one transaction so a blocked row rolls back the
+  batch.
+- Database drop first terminates the application's own sessions. If other
+  sessions remain, the configured admin role can run
+  `DROP DATABASE ... WITH (FORCE)`; otherwise the API returns `database_in_use`
+  with the blocking roles/clients.
 
 ## Server-Side Drafts
 
@@ -102,7 +136,8 @@
 
 ## Typical Tables
 
-`sys_module`, `sys_model`, `sys_field`, `sys_lang`, `sys_contact`, `sys_user`,
-`sys_file`, `temp_model` (core), `stock_product` (stock), `sale_order` and
+`sys_module`, `sys_model`, `sys_field`, `sys_menu`, `sys_translation`,
+`sys_lang`, `sys_contact`, `sys_user` (with `lang_id`), `sys_file`,
+`temp_model` (core), `stock_product` (stock), `sale_order` and
 `sale_order_line` (sale). This is not an inventory — modules add their own
 tables when installed.

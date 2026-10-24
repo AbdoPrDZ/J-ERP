@@ -3,6 +3,8 @@ import * as React from 'react';
 import { model } from '../../model';
 import type { FieldDescriptor } from '../../types';
 
+import { t } from '../../i18n';
+
 interface Language {
   id: number;
   name: string;
@@ -150,15 +152,17 @@ export function MultiLangPanel({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={`${title} translations`}
+            aria-label={t('app.multi_lang_panel.dialog_aria_label', { title })}
             className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-lg bg-white shadow-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-              <h3 className="text-base font-semibold">{title} translations</h3>
+              <h3 className="text-base font-semibold">
+                {t('app.multi_lang_panel.title', { title })}
+              </h3>
               <button
                 type="button"
-                aria-label="Close"
+                aria-label={t('app.multi_lang_panel.close_button')}
                 className="rounded px-2 text-slate-400 hover:bg-brand-cyan/10 hover:text-brand-blue"
                 onClick={() => setOpen(false)}
               >
@@ -169,14 +173,16 @@ export function MultiLangPanel({
             <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4">
               {!recordId ? (
                 <p className="text-xs text-slate-500">
-                  Save the record first to edit translations.
+                  {t('app.multi_lang_panel.no_record_message')}
                 </p>
               ) : null}
 
               {error ? <p className="text-xs text-red-600">{error}</p> : null}
 
               {orderedLanguages.length === 0 ? (
-                <p className="text-xs text-slate-500">No languages configured.</p>
+                <p className="text-xs text-slate-500">
+                  {t('app.multi_lang_panel.no_languages_message')}
+                </p>
               ) : null}
 
               {orderedLanguages.map((language) => {
@@ -186,7 +192,9 @@ export function MultiLangPanel({
                   <div key={language.code}>
                     <span className="mb-1 block text-xs text-slate-500">
                       {language.name} ({language.code})
-                      {isDefault ? ' — default' : ''}
+                      {isDefault
+                        ? ` — ${t('app.multi_lang_panel.default')}`
+                        : ''}
                     </span>
                     <input
                       type="text"
@@ -216,7 +224,7 @@ export function MultiLangPanel({
                 className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5"
                 onClick={() => setOpen(false)}
               >
-                Close
+                {t('app.multi_lang_panel.close_button')}
               </button>
             </div>
           </div>

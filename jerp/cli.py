@@ -277,6 +277,57 @@ def cmd_describe(args) -> int:
   return 0
 
 
+def cmd_i18n_scaffold(args) -> int:
+  from jerp.i18n_cli import scaffold
+
+  config = Config.load(args.config)
+  paths = scaffold(config.modules_path, args.module, args.lang)
+  for path in paths:
+    print(path)
+  return 0
+
+
+def cmd_i18n_check(args) -> int:
+  from jerp.i18n_cli import check
+
+  config = Config.load(args.config)
+  problems = check(config.modules_path, args.module)
+  if problems:
+    print(f'{problems} translation problem(s).', file=sys.stderr)
+    return 1
+  print('Translations look consistent.')
+  return 0
+
+
+def cmd_i18n_import(args) -> int:
+  from jerp.i18n_cli import sync_database
+
+  manager = _manager(args)
+  registry = manager.registry(_database(args))
+  count = sync_database(registry, args.module, args.lang)
+  print(f'Imported {count} translation row(s).')
+  return 0
+
+
+def cmd_i18n_translate(args) -> int:
+  from jerp.i18n_cli import translate_modules
+
+  config = Config.load(args.config)
+  count = translate_modules(
+    config.modules_path,
+    [args.module],
+    [args.lang],
+    source=args.source,
+    api_key=args.api_key,
+    delay=args.delay,
+    overwrite=args.overwrite,
+    dry_run=args.dry_run,
+    limit=args.limit,
+  )
+  print(f'Translated {count} value(s).')
+  return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
   parser = argparse.ArgumentParser(prog='jerp', description='J-ERP manager')
   parser.add_argument('--config', help='Path to jerp.config.json')
@@ -334,6 +385,64 @@ def build_parser() -> argparse.ArgumentParser:
   p = sub.add_parser('describe', help='Show how a built model was composed')
   p.add_argument('model')
   p.set_defaults(func=cmd_describe)
+
+  p = sub.add_parser('i18n', help='Translation files and database catalogs')
+  i18n = p.add_subparsers(dest='i18n_command', required=True)
+
+  p = i18n.add_parser('scaffold', help='Generate or update blank .lang files')
+  p.add_argument('--module', action='append', help='Limit to one module')
+  p.add_argument('--lang', action='append', required=True, help='Language code')
+  p.set_defaults(func=cmd_i18n_scaffold)
+
+  p = i18n.add_parser('check', help='Check keys, duplicates and stale entries')
+  p.add_argument('--module', action='append', help='Limit to one module')
+  p.set_defaults(func=cmd_i18n_check)
+
+  p = i18n.add_parser('import', help='Load .lang files into the database')
+  p.add_argument('--module', action='append', help='Limit to one module')
+  p.add_argument(
+    '--lang', action='append', help='Import only this language (repeatable)'
+  )
+  p.set_defaults(func=cmd_i18n_import)
+
+  p = i18n.add_parser(
+    'translate', help='Translate empty .lang values with Google Translate'
+  )
+  p.add_argument(
+    '--module', required=True, help='Module name (one module per run)'
+  )
+  p.add_argument(
+    '--lang', required=True, help='Target language (one language per run)'
+  )
+  p.add_argument('--source', default='en', help='Source language (default: en)')
+  p.add_argument(
+    '--api-key',
+    default=None,
+    help='Google Cloud API key (or GOOGLE_TRANSLATE_API_KEY)',
+  )
+  p.add_argument(
+    '--delay',
+    type=float,
+    default=0.2,
+    help='Delay between public-endpoint requests, in seconds',
+  )
+  p.add_argument(
+    '--overwrite',
+    action='store_true',
+    help='Replace existing translations instead of only filling blanks',
+  )
+  p.add_argument(
+    '--dry-run',
+    action='store_true',
+    help='Print translations without writing files',
+  )
+  p.add_argument(
+    '--limit',
+    type=int,
+    default=None,
+    help='Translate at most this many missing values per language',
+  )
+  p.set_defaults(func=cmd_i18n_translate)
 
   return parser
 

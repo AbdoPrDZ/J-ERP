@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from jerp import security
-from jerp.db import is_valid_database_name
+from jerp import i18n, security
+from jerp.db import DatabaseInUseError, is_valid_database_name
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
@@ -159,6 +159,35 @@ class DatabaseController(controller.Controller):
     active = environment.active_database == name
     try:
       manager.drop(name)
+    except DatabaseInUseError as exc:
+      sessions = ', '.join(
+        f"{row.get('usename') or '?'} "
+        f"({row.get('application_name') or 'unknown client'})"
+        for row in exc.sessions
+      )
+      message = i18n._t(
+        'error.database_in_use',
+        'Cannot delete "{name}" while it is used by: {sessions}.',
+        name=name,
+        sessions=sessions,
+      )
+      if exc.admin_error is not None:
+        hint = i18n._t(
+          'error.database_admin_failed',
+          'The admin force-drop failed: {error}. Check '
+          'databases.admin_user / admin_password.',
+          error=exc.admin_error,
+        )
+      else:
+        hint = i18n._t(
+          'error.database_in_use_hint',
+          'Close those connections or configure databases.admin_user / '
+          'admin_password to force the drop.',
+        )
+      return response.json(
+        {'error': 'database_in_use', 'message': f'{message} {hint}'},
+        status=409,
+      )
     except Exception as exc:
       return response.json(
         {'error': 'delete_failed', 'message': str(exc)}, status=500

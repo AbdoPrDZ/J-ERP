@@ -37,6 +37,24 @@ INSERT_SQL = (
 )
 
 
+def iter_menu_entries(entries, module_name: str, code_prefix: str = ''):
+  """Yield ``(code, item, parent_code)`` for every visible menu declaration."""
+
+  for index, item in enumerate(entries):
+    if not isinstance(item, dict):
+      continue
+    label = item.get('label')
+    if not label or item.get('hide'):
+      continue
+
+    code = f'{code_prefix}.{index}' if code_prefix else f'{module_name}.{index}'
+    yield code, item, code_prefix or None
+    for child in iter_menu_entries(
+      item.get('children') or [], module_name, code
+    ):
+      yield child
+
+
 class MenuSyncer:
   """Mirror a module's declared routes into ``sys.menu``."""
 
@@ -62,7 +80,30 @@ class MenuSyncer:
         f'DELETE FROM {quote_table(TABLE)} WHERE {quote_ident("module")} = %s',
         [module_name],
       )
-      self._insert_entries(module_name, entries, None, '')
+      inserted: dict[str, int] = {}
+      for code, item, parent_code in iter_menu_entries(entries, module_name):
+        page = None
+        if item.get('view'):
+          page = {
+            'view': item['view'],
+            'endpoint': item.get('endpoint') or item.get('path'),
+            'params': dict(item.get('params') or {}),
+          }
+
+        row = self.db.fetchone(INSERT_SQL, [
+          code,
+          module_name,
+          inserted.get(parent_code) if parent_code else None,
+          item.get('label'),
+          item.get('view'),
+          menu_href(page) if page else None,
+          item.get('sequence', 0),
+          bool(item.get('auth', True)),
+          item.get('description'),
+          item.get('img'),
+        ])
+        if row:
+          inserted[code] = row['id']
 
   def sync_missing(self, module_names) -> None:
     """Populate modules that do not have menu rows yet (upgrade backfill)."""
@@ -84,51 +125,6 @@ class MenuSyncer:
       [module_name],
     )
 
-  # --- internals ----------------------------------------------------------
-
-  def _insert_entries(
-    self, module_name: str, entries, parent_id, code_prefix: str
-  ) -> None:
-    for index, item in enumerate(entries):
-      if not isinstance(item, dict):
-        continue
-
-      label = item.get('label')
-      # Hidden and unlabelled entries never appear in the navigation (and,
-      # like the old in-memory tree, their children are not traversed).
-      if not label or item.get('hide'):
-        continue
-
-      code = f'{code_prefix}.{index}' if code_prefix else f'{module_name}.{index}'
-      page = None
-      if item.get('view'):
-        page = {
-          'view': item['view'],
-          'endpoint': item.get('endpoint') or item.get('path'),
-          'params': dict(item.get('params') or {}),
-        }
-
-      row = self.db.fetchone(INSERT_SQL, [
-        code,
-        module_name,
-        parent_id,
-        label,
-        item.get('view'),
-        menu_href(page) if page else None,
-        item.get('sequence', 0),
-        bool(item.get('auth', True)),
-        item.get('description'),
-        item.get('img'),
-      ])
-      node_id = row['id'] if row else None
-      if node_id is None:
-        continue
-
-      children = item.get('children') or []
-      if children:
-        self._insert_entries(module_name, children, node_id, code)
-
-
 def load_rows(db) -> list[dict]:
   """All menu rows in declaration order."""
 
@@ -141,6 +137,8 @@ def load_rows(db) -> list[dict]:
 def menu_tree(rows, installed_modules=None) -> list[dict]:
   """Build the nested menu payload from flat ``sys.menu`` rows."""
 
+  from jerp import i18n
+
   installed = None if installed_modules is None else set(installed_modules)
   children_by_parent: dict = {}
 
@@ -152,8 +150,11 @@ def menu_tree(rows, installed_modules=None) -> list[dict]:
   def build(parent_id):
     nodes: list[dict] = []
     for row in children_by_parent.get(parent_id, []):
+      code = row.get('code') or ''
       node: dict = {
-        'label': row['label'],
+        'label': i18n.translate(
+          f'menu.{code}.label', row['label']
+        ),
         'sequence': row.get('sequence') or 0,
       }
       if row.get('href'):
@@ -162,7 +163,9 @@ def menu_tree(rows, installed_modules=None) -> list[dict]:
       if row.get('img'):
         node['img'] = row['img']
       if row.get('description'):
-        node['description'] = row['description']
+        node['description'] = i18n.translate(
+          f'menu.{code}.description', row['description']
+        )
 
       children = build(row.get('id'))
       if children:

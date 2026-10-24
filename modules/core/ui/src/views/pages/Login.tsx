@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { api } from '@jerp/ui';
+import { api, t } from '@jerp/ui';
 
 export default function Login() {
   const [username, setUsername] = React.useState('admin');
@@ -46,18 +46,21 @@ export default function Login() {
           />
 
           <p className="mt-10 text-xs font-semibold uppercase tracking-[0.24em] text-brand-cyan-dark">
-            Modular ERP platform
+            {t('view.core.login.hero_eyebrow')}
           </p>
           <h1 className="mt-3 max-w-lg text-4xl font-semibold leading-tight tracking-tight text-brand-navy xl:text-5xl">
-            One workspace for your whole business.
+            {t('view.core.login.hero_title')}
           </h1>
           <p className="mt-4 max-w-md text-base leading-relaxed text-slate-500">
-            Sales, inventory, contacts and configuration — connected by design,
-            ready to grow with you.
+            {t('view.core.login.hero_subtitle')}
           </p>
 
           <div className="mt-8 flex flex-wrap gap-2">
-            {['Modular', 'Secure', 'Fast'].map((label) => (
+            {[
+              t('view.core.login.badge_modular'),
+              t('view.core.login.badge_secure'),
+              t('view.core.login.badge_fast'),
+            ].map((label) => (
               <span
                 key={label}
                 className="rounded-full border border-brand-blue/15 bg-white/70 px-3 py-1 text-xs font-medium text-brand-navy shadow-sm backdrop-blur"
@@ -88,13 +91,13 @@ export default function Login() {
             />
 
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-cyan-dark">
-              Welcome back
+              {t('home.welcome')}
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-brand-navy">
-              Sign in to J-ERP
+              {t('view.core.login.title')}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Use your workspace credentials to continue.
+              {t('view.core.login.subtitle')}
             </p>
 
             {error ? (
@@ -109,7 +112,7 @@ export default function Login() {
             <div className="mt-6 space-y-4">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Username
+                  {t('view.core.login.username')}
                 </span>
                 <input
                   className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-brand-navy shadow-sm transition focus:border-brand-blue focus:outline-none focus:ring-4 focus:ring-brand-cyan/20"
@@ -122,7 +125,7 @@ export default function Login() {
 
               <label className="block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Password
+                  {t('view.core.login.password')}
                 </span>
                 <div className="relative">
                   <input
@@ -137,7 +140,7 @@ export default function Login() {
                     className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-brand-blue hover:text-brand-blue-dark focus:outline-none focus-visible:underline"
                     onClick={() => setShowPassword((value) => !value)}
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    {showPassword ? t('app.hide') : t('app.show')}
                   </button>
                 </div>
               </label>
@@ -148,11 +151,13 @@ export default function Login() {
               className="mt-6 w-full rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-cyan/30"
               disabled={busy}
             >
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy
+                ? t('view.core.login.signing_in')
+                : t('view.core.login.sign_in')}
             </button>
 
             <p className="mt-5 text-center text-xs leading-relaxed text-slate-400">
-              Need access? Contact your workspace administrator.
+              {t('view.core.login.contact_admin')}
             </p>
           </form>
         </section>

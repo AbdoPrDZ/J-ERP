@@ -12,13 +12,14 @@ import {
   FormTabs,
   FormTab,
 } from '@jerp/ui';
+import { t } from '@jerp/locale';
 
 
 export default function Orders() {
   return (
     <Page
       name="sale.orders"
-      title="Sale Orders"
+      title={t('view.sale.orders.title')}
       model="sale.order"
       searchBar
       create
@@ -29,7 +30,7 @@ export default function Orders() {
       <PageContent>
         <Table
           model="sale.order"
-          emptyMessage="No sale orders found."
+          emptyMessage={t('view.sale.orders.empty_message')}
         >
           <TableField name="name" />
           <TableField name="client_id" />
@@ -38,7 +39,7 @@ export default function Orders() {
           <TableField name="amount_total" />
         </Table>
 
-        <Cards model="sale.order" emptyMessage="No sale orders found.">
+        <Cards model="sale.order" emptyMessage={t('view.sale.orders.empty_message')}>
           <CardField name="name" />
           <CardField name="client_id" />
           <CardField name="date_order" />
@@ -46,8 +47,8 @@ export default function Orders() {
           <CardField name="amount_total" />
         </Cards>
 
-        <Form model="sale.order" title="Sale Order">
-          <FormGroup label="Order">
+        <Form model="sale.order" title={t('view.sale.orders.form.title')}>
+          <FormGroup label={t('view.sale.orders.form.group_general')}>
             <FormField name="name" />
             <FormField name="client_id" />
             <FormField name="date_order" />
@@ -56,8 +57,8 @@ export default function Orders() {
           </FormGroup>
 
           <FormTabs>
-            <FormTab label="Lines">
-              <FormTable model="sale.order.line" emptyMessage="No lines found.">
+            <FormTab label={t('view.sale.orders.form.tabs.lines.label')}>
+              <FormTable model="sale.order.line" emptyMessage={t('view.sale.orders.form.tabs.lines.empty_message')}>
                 <TableField name="product_id" />
                 <TableField name="name" />
                 <TableField name="quantity" />
@@ -65,7 +66,7 @@ export default function Orders() {
                 <TableField name="subtotal" />
               </FormTable>
             </FormTab>
-            <FormTab label="Notes">
+            <FormTab label={t('view.sale.orders.form.tabs.notes.label')}>
               <FormField name="note" />
             </FormTab>
           </FormTabs>

@@ -98,6 +98,7 @@ export default defineConfig(({ command }) => ({
     alias: {
       '@': uiSrc,
       '@jerp/ui': fileURLToPath(new URL('./jerp/ui/src/core/runtime.ts', import.meta.url)),
+      '@jerp/locale': fileURLToPath(new URL('./jerp/ui/src/core/runtime.ts', import.meta.url)),
       '@modules': modules,
     },
   },

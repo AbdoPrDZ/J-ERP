@@ -6,6 +6,7 @@ class SaleOrderLine(models.Model):
   """A product line on a sales order."""
 
   _name = 'sale.order.line'
+  _description = 'Product lines on a sales order.'
   _label = 'name'
 
   order_id = fields.Many2oneField(

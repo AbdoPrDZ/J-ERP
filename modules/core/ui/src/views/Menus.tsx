@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { Page, PageContent, useMenu, type MenuItem } from '@jerp/ui';
+import { t } from '@jerp/locale';
 
 function targetLabel(item: MenuItem): string {
   if (!item.href) {
-    return 'Group';
+    return t('app.group');
   }
   try {
     const url = new URL(item.href, window.location.origin);
@@ -42,14 +43,14 @@ function MenuRows({
                   {targetLabel(item)}
                 </a>
               ) : (
-                <span className="text-slate-400">Group</span>
+                <span className="text-slate-400">{t('app.group')}</span>
               )}
             </td>
             <td className="px-3 py-2 text-right text-slate-500">
               {item.sequence ?? 0}
             </td>
             <td className="px-3 py-2 text-right text-slate-400">
-              {item.auth === false ? 'public' : 'private'}
+              {item.auth === false ? t('app.public') : t('app.private')}
             </td>
           </tr>
           {item.children && item.children.length > 0 ? (
@@ -67,7 +68,7 @@ export default function Menus() {
   return (
     <Page
       name="core.menus"
-      title="Menus"
+      title={t('view.core.menus.title')}
       searchBar={false}
       create={false}
       update={false}
@@ -79,21 +80,24 @@ export default function Menus() {
       <PageContent>
         <div className="space-y-3">
           <p className="text-sm text-slate-500">
-            Menu entries are stored in
-            <code className="mx-1 rounded bg-slate-100 px-1">sys.menu</code>
-            and synchronized from each installed module&apos;s
-            <code className="mx-1 rounded bg-slate-100 px-1">configure.json</code>
-            when it is installed or updated. Groups have no target; pages link to
-            their view or endpoint.
+            {t('view.core.menus.description')}
           </p>
           <div className="overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-brand-white text-left text-slate-500">
-                  <th className="px-3 py-2 font-medium">Label</th>
-                  <th className="px-3 py-2 font-medium">View / endpoint</th>
-                  <th className="px-3 py-2 text-right font-medium">Sequence</th>
-                  <th className="px-3 py-2 text-right font-medium">Access</th>
+                  <th className="px-3 py-2 font-medium">
+                    {t('view.core.menus.column_label')}
+                  </th>
+                  <th className="px-3 py-2 font-medium">
+                    {t('view.core.menus.column_target')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('view.core.menus.column_sequence')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('view.core.menus.column_access')}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -105,7 +109,7 @@ export default function Menus() {
                       colSpan={4}
                       className="px-3 py-5 text-center text-slate-400"
                     >
-                      No menus are configured.
+                      {t('view.core.menus.empty_message')}
                     </td>
                   </tr>
                 )}

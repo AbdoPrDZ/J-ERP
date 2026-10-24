@@ -18,6 +18,9 @@
   call sites to avoid circular imports (`jerp.env` ↔ `jerp.models`).
 - Raise `ValueError`/`RuntimeError` with clear messages; HTTP handlers return
   `response.json({...}, status=...)` instead of raising.
+- User-facing Python messages use `_t('key', 'English source', **params)` from
+  `jerp.i18n`. Models carry a short `_description`; field labels/help are
+  translated from model keys.
 - SQL identifiers go through `jerp.dialect.quote_ident`/`quote_table`; values
   are always parameterized (`%s`).
 
@@ -31,6 +34,12 @@
   the file name.
 - Shared kit additions belong in `jerp/ui/src/core/` and must be re-exported
   from `runtime.ts` to reach modules.
+- User-facing UI strings use `t('view.<module>.<view>.<key>')` from
+  `@jerp/locale`. There is no fallback argument; add the English value to
+  `i18n/en.lang` and run `i18n check`. The database manager page stays
+  English-only because it renders before a database/catalog exists.
+- Dynamic keys used through variables belong in `CORE_EXTRA_KEYS` or
+  `MODULE_EXTRA_KEYS` in `jerp/i18n_cli.py` so scaffolding still collects them.
 
 ## Boundaries
 
@@ -65,7 +74,10 @@ output in `data/`.
   and confirm destructive operations with the user. Ordinary requests never
   retype or drop columns; only an explicit install/update does.
 - `jerp.config.json` currently contains development credentials; do not commit
-  real secrets.
+  real secrets. Use `JERP_DB_ADMIN_USER` / `JERP_DB_ADMIN_PASSWORD` for the
+  optional force-drop role rather than committing a superuser password.
+- Deleting a referenced record is blocked by the ORM; do not bypass it with raw
+  SQL in controllers without an explicit reason.
 
 ## Verification
 
@@ -73,6 +85,7 @@ output in `data/`.
 - `npm run build` after shell/UI-kit changes; `npm run build:views` after view
   or menu-config changes (it validates declared views).
 - `python -m unittest discover -s tests` for the unit suite.
+- `python -m jerp.cli i18n check` after translation changes.
 - Start the app and exercise the affected flow.
 - Draft/compute/onchange changes should also be exercised through a temporary
   database (draft create → change → commit).

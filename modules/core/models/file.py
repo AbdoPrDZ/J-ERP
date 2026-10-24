@@ -5,6 +5,7 @@ class File(models.Model):
   """Metadata for an uploaded/stored file."""
 
   _name = 'sys.file'
+  _description = 'Stored file metadata.'
 
   name = fields.StringField(
     name='Name',

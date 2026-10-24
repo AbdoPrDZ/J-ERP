@@ -41,15 +41,17 @@ and `stock`.
   `amount_total` is refreshed from server-computed draft values.
 - `commit` writes the parent and lines atomically. Parent totals are recomputed
   after children exist.
-- Uninstalling `sale` removes the Sales menu and its home shortcut after a page
-  refresh; its tables are dropped by the module manager.
+- Uninstalling `sale` removes the Sales menu and its translation rows after a
+  page refresh; its tables are dropped by the module manager.
 
 ## UI
 
 - `modules/sale/ui/src/views/Orders.tsx` — orders list/cards, a form with a
   `FormTable` for lines, and Confirm/Done/Cancel row actions.
 - `modules/sale/ui/src/views/OrderLines.tsx` — standalone line list/cards/form.
-- Both pages use the shared `Page`/`Table`/`Cards`/`Form` kit.
+- `modules/sale/i18n/{en,ar,fr}.lang` — model/menu/view translations.
+- Both pages use the shared `Page`/`Table`/`Cards`/`Form` kit and `t()` from
+  `@jerp/locale`.
 
 ## Checks
 

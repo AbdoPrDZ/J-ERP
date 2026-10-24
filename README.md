@@ -19,11 +19,14 @@ J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + Typ
 - **Server-side drafts** - forms and embedded tables edit `temp.model` drafts with a debounced on-change round-trip, reload-safe state and atomic parent/child commit.
 - **Multi-database management** - create, list, select and drop databases from the UI; access is scoped to the configured owner.
 - **Database-backed navigation** - each module declares routes in `configure.json`; its menu entries are synchronized into `sys.menu` on install/update and served by `GET /api/menu`.
+- **SPA shell** - menu/internal navigation uses the History API, animated drawer/view transitions and a shared loading indicator instead of full page reloads.
 - **Declarative page DSL** - compose pages from `Page`, `Table`, `Cards`, `Form`, `FormTable`, `FormField`, `FormGroup`, `Action` and friends; no per-view plumbing.
 - **Typed model API** — a single endpoint (`POST /api/model/<model>/<func>`) plus a typed client, instead of hand-written controllers for every screen.
 - **Views built on install** — module view bundles are compiled with esbuild into `data/view/<module>/` and loaded through an import map.
 - **Files and images** — two-step uploads, a `File` model, `FileField`/`ImageField` widgets, and storage served only for files known to the active database.
 - **Auth included** — users with hashed passwords (PBKDF2), hidden fields that never leave the server, and login/profile pages.
+- **Database-backed i18n** — per-user language preference, flat `.lang` catalogs, server/UI translation, Google-assisted CLI and activation-time loading.
+- **Safe deletion** — records referenced by many2one/file fields cannot be deleted; database drops close app sessions and can use an optional admin role for `WITH (FORCE)`.
 
 ## Architecture
 
@@ -37,8 +40,10 @@ jerp/                   Framework: ORM, schema sync, router, server, views, modu
   modules.py            Module discovery, install/update/uninstall, build hooks
   views.py              Route/view collection and shell rendering
   menus.py              sys.menu synchronization and tree loading
+  i18n.py               Language resolution, catalogs and translation
+  translate.py          Google Translate client for the i18n CLI
   server.py             HTTP dispatch, static + asset + storage routes
-  ui/                   Shared React runtime, page DSL and field widgets
+  ui/                   Shared React runtime/SPA shell, page DSL and widgets
 modules/<name>/         Feature modules (models, controllers, views, assets)
   configure.json        Module metadata, menus/routes, dependencies
 tools/                  Vite plugin and build scripts
@@ -94,7 +99,48 @@ npm run build:all                    # both
 python -m unittest discover -s tests # unit tests
 python -m jerp.cli install stock --database <db>
 python -m jerp.cli update --database <db>
+python -m jerp.cli i18n scaffold --module core --lang ar
+python -m jerp.cli i18n check
+python -m jerp.cli --database <db> i18n import
 ```
+
+### Translations
+
+Module translations live in `modules/<module>/i18n/<lang>.lang` as flat
+`key = value` files:
+
+```ini
+# English: Modules
+view.core.modules.title = الوحدات
+```
+
+Use the CLI to scaffold every model/view/menu key for a language, check the
+files, or load them into `sys.translation`:
+
+```bash
+python -m jerp.cli i18n scaffold --module core --lang ar
+python -m jerp.cli i18n check
+python -m jerp.cli i18n translate --module core --lang ar
+python -m jerp.cli --database <db> i18n import --module core --lang ar
+```
+
+`i18n translate` works on one module/language pair per run and fills blank
+values with Google Translate. Set
+`GOOGLE_TRANSLATE_API_KEY` for the official Cloud Translation API, or omit it to
+use the public endpoint. Use `--dry-run` to preview and `--overwrite` to replace
+existing translations. Install/update also imports the files (file values win).
+New databases start with **English only** active. Activate French or Arabic (or
+another language) from the Languages page; activating it imports that language's
+`.lang` files for all installed modules. Module install/update only imports
+currently active languages. The selected language is stored per user in
+`sys.user.lang_id`, with the `jerp_lang` cookie as the anonymous/session
+fallback. The user menu switches language and reloads.
+
+UI strings use `t('view.<module>.<view>.<key>')` from `@jerp/locale` and have no
+inline fallback text; keep the English value in `i18n/en.lang`. Python-facing
+errors use `_t('error.<name>', 'English text', **params)`. `i18n scaffold`
+collects model/field/description keys, menus, module summaries, Python `_t()`
+calls and UI `t()` calls.
 
 ## Configuration
 
@@ -104,6 +150,7 @@ python -m jerp.cli update --database <db>
 | --- | --- |
 | `databases.host` / `port` / `user` / `password` / `sslmode` | PostgreSQL connection settings |
 | `databases.owner` | Only databases owned by this role are listed (defaults to the connecting user) |
+| `databases.admin_user` / `admin_password` | Optional superuser used only to force-drop databases (or use `JERP_DB_ADMIN_USER` / `JERP_DB_ADMIN_PASSWORD`) |
 | `app.host` / `app.port` | HTTP bind address (default `127.0.0.1:1347`) |
 | `database` | Optional default database for standalone `Environment()` / `JERP_DATABASE` |
 | `modules_path` | Where modules are discovered (`modules`) |
@@ -111,6 +158,12 @@ python -m jerp.cli update --database <db>
 | `ui_dist` | Built UI directory (`data/ui`) |
 | `views_dir` | Built module view bundles (`data/view`) |
 | `uploads_dir` | Uploaded files (`data/uploads`) |
+
+Database deletion closes the application's own sessions. If pgAdmin/a
+superuser session remains, close it or configure `databases.admin_user` /
+`admin_password` (prefer the environment variables) so deletion can use
+`DROP DATABASE ... WITH (FORCE)`. The database manager page itself stays in
+English because it renders before a database/language is selected.
 
 ## Writing a module
 
@@ -143,6 +196,7 @@ from jerp import fields, models
 
 class Product(models.Model):
   _name = 'stock.product'
+  _description = 'Products available for sale and stock.'
 
   name = fields.StringField(name='Name', required=True)
   standard_price = fields.FloatField(name='Cost', default=0.0)

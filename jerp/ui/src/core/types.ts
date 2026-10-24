@@ -37,6 +37,7 @@ export interface ViewDescriptor {
   type: string;
   model?: string;
   title?: string;
+  description?: string;
   fields: FieldDescriptor[];
   actions?: ActionDescriptor[];
 }

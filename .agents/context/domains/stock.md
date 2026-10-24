@@ -16,8 +16,8 @@ screen → menu.
   `standard_price` (cost) and `price` (selling price), both floats.
 - `modules/stock/ui/src/views/Products.tsx` — `Page` with Table/Cards/Form for
   the product model; uses `TableField`/`FormField` for the product fields.
-- The Stock menu group has `sequence: 30`; Products is flagged `add_to_home` so
-  it appears on the Home dashboard while the module is installed.
+- `modules/stock/i18n/{en,ar,fr}.lang` — model/menu/view translations.
+- The Stock menu group has `sequence: 30`; `add_to_home` is currently ignored.
 
 ## Behavior
 
@@ -27,7 +27,8 @@ screen → menu.
   image field holds its id; files are served at `/__storage/<token>`.
 - `standard_price` is the internal cost; `price` is the default selling price used
   by sale order lines.
-- The menu and Home shortcut appear only where the `stock` module is installed.
+- The Stock menu appears only where the module is installed. Its menu rows and
+  translations are removed on uninstall.
 - Stock cannot be installed without `core`; uninstalling stock drops
   `stock_product`.
 

@@ -49,7 +49,14 @@ npm run build:all             # build + build:views
 
 Use the database manager UI (or `POST /api/databases`). Creation installs the
 core module, seeds an admin user, and requires an admin password. The name must
-match `^[a-z_][a-z0-9_]{0,62}$`.
+match `^[a-z_][a-z0-9_]{0,62}$`. New databases have **English only** active;
+activate other seeded languages from the Languages page.
+
+Dropping a database closes the app's own sessions. A `postgres`/pgAdmin session
+can only be force-terminated by a privileged role: close that connection, or set
+`databases.admin_user` / `admin_password` (or `JERP_DB_ADMIN_USER` /
+`JERP_DB_ADMIN_PASSWORD`) and restart. The admin role is used only for
+`DROP DATABASE ... WITH (FORCE)`.
 
 ## Install / Update / Uninstall A Module
 
@@ -63,9 +70,13 @@ match `^[a-z_][a-z0-9_]{0,62}$`.
    and builds its views with `node tools/build-views.mjs <module>` when Node is
    available.
 4. `core` cannot be uninstalled; modules with dependents cannot be uninstalled.
-5. Uninstall drops the module's tables — confirm with the user first.
-6. Menus and `add_to_home` entries are read from the database per request, so
-   they disappear after a refresh; restart the backend if Python modules changed.
+5. Uninstall drops the module's tables and removes its `sys.menu` and
+   `sys.translation` rows — confirm with the user first.
+6. Install/update replaces the module's `sys.menu` rows and imports `.lang`
+   files for **active** languages only (file values win). Activating a language
+   in `sys.lang` loads it for all installed modules.
+7. Menus are read from the database per request, so external installs/uninstalls
+   apply after a refresh; restart the backend if Python modules changed.
 
 CLI equivalents (preview first):
 
@@ -82,13 +93,16 @@ applied plan; blocked changes make it exit nonzero after the safe part commits.
 ## Add A Model
 
 1. Create `modules/<module>/models/<name>.py`:
-   subclass `jerp.models.Model`, set `_name`/`_table`, declare `jerp.fields.*`.
+   subclass `jerp.models.Model`, set `_name`/`_table`/`_description`, declare
+   `jerp.fields.*`.
 2. Import it from `modules/<module>/models/__init__.py` (or the package
    `__init__`) so the metaclass registers it.
 3. Install or update the module so the schema is synchronized.
 4. Expose custom behavior with `@jerp.api_expose` (instance methods receive the
    record selected by `id`); it is callable at
    `POST /api/model/<model>/<method>`.
+5. Use `from jerp.i18n import _t` for user-facing Python errors; the scaffold
+   collects `_t('key', 'English source')` calls.
 
 ## Add A Field
 
@@ -132,10 +146,29 @@ dictionary are both supported. Computed fields are read-only in forms.
    `{"label": "…", "view": "<module>.<key>", "endpoint": "/optional", "sequence": n}`.
 4. Groups are entries with `label` + `children`; `hide` removes it from the menu;
    `auth: false` makes it public; `header: false` hides the shell header.
-5. Add `"add_to_home": true` (and an optional `description`) to show it in the
-   Home quick-access grid. Groups and hidden pages are supported.
-6. Restart the backend so page routes are re-registered. `build:views` fails if
+5. Labelled, non-hidden entries are synchronized into `sys.menu` on
+   install/update. `add_to_home` is currently ignored.
+6. Add user-facing strings with `t('view.<module>.<view>.<key>')` from
+   `@jerp/locale`; there is no second fallback argument. Add the English value to
+   the module's `i18n/en.lang`, then use `i18n scaffold/check/translate`.
+7. Restart the backend so page routes are re-registered. `build:views` fails if
    a declared menu view has no matching view file.
+
+## Translations
+
+1. `python -m jerp.cli i18n scaffold --module <module> --lang en` generates keys
+   from models/fields/descriptions, menus, module summaries, Python `_t()` and
+   UI `t()` calls.
+2. Fill English values in `i18n/en.lang` for dynamic UI keys.
+3. Generate a target file, then translate blanks:
+   `python -m jerp.cli i18n scaffold --module <module> --lang ar` and
+   `python -m jerp.cli i18n translate --module <module> --lang ar`
+   (`--dry-run`, `--overwrite`, `--limit`, optional Google API key).
+4. `python -m jerp.cli i18n check` reports duplicates, missing and stale keys.
+5. `python -m jerp.cli --database <db> i18n import --module <module> --lang ar`
+   loads one language manually. Install/update only imports active languages.
+6. Activate the language in the Languages page; this reloads its strings for all
+   installed modules.
 
 ## Verify Changes
 
@@ -146,6 +179,7 @@ There is no linter configured. At minimum:
 - `npm run build:views` after view/manifest changes (it also validates that every
   declared menu view has a file).
 - `python -m unittest discover -s tests` for the unit suite.
+- `python -m jerp.cli i18n check` after translation/template changes.
 - Start `python app.py` and exercise the affected page/API against a test
   database.
 - For backend-only edits, `python -m compileall jerp modules` catches syntax

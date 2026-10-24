@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { FieldHelp } from './fields/FieldHelp';
 import { fieldRegistry } from './fields/registry';
 import type { FormSchema } from '../types';
@@ -38,7 +39,7 @@ export function Form({ schema, values, onChange, onSubmit, readonly }: FormProps
                 />
               ) : (
                 <span className="block text-sm text-red-600">
-                  No widget registered for type “{field.ttype}”.
+                  {t('app.missing_widget', { type: field.ttype })}
                 </span>
               )}
             </label>
@@ -50,7 +51,7 @@ export function Form({ schema, values, onChange, onSubmit, readonly }: FormProps
           type="submit"
           className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan/60"
         >
-          Save
+          {t('app.save')}
         </button>
       ) : null}
     </form>

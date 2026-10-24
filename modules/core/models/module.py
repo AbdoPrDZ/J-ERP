@@ -1,4 +1,4 @@
-from jerp import fields
+from jerp import fields, i18n
 from jerp.api import api_expose
 from jerp.env import Environment
 from jerp.models import Model
@@ -9,6 +9,7 @@ class SysModule(Model):
   """Installed modules and their versions, per database."""
 
   _name = 'sys.module'
+  _description = 'Installed modules and their versions, per database.'
 
   name = fields.StringField(
     name='Name',
@@ -39,6 +40,7 @@ class SysModel(Model):
   """Models that have been synchronized into this database."""
 
   _name = 'sys.model'
+  _description = 'Models synchronized into the database.'
 
   name = fields.StringField(
     name='Model',
@@ -56,6 +58,7 @@ class SysField(Model):
   """Field to column mapping, used for deterministic rename detection."""
 
   _name = 'sys.field'
+  _description = 'Field-to-column mappings used by schema synchronization.'
 
   model = fields.StringField(
     name='Model',
@@ -93,6 +96,7 @@ class Module(Model):
   """Virtual model over the modules discovered on disk (no table)."""
 
   _name = 'module'
+  _description = 'Modules discovered on disk and their installation state.'
   _virtual = True
 
   name = fields.StringField(name='Name', help='Module technical name.')
@@ -141,7 +145,9 @@ class Module(Model):
         'name': name,
         'version': info.version,
         'state': 'installed' if is_installed else 'not installed',
-        'summary': info.summary,
+        'summary': i18n.translate(
+          f'module.{name}.summary', info.summary
+        ),
         'depends': ', '.join(info.depends) or '—',
         'logo': info.logo,
         '_actions': actions,

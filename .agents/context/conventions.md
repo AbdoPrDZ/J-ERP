@@ -59,8 +59,11 @@ output in `data/`.
   table; keep that check.
 - Path traversal is blocked in static/asset/storage serving; keep resolving and
   validating paths before reading files.
-- Schema changes can drop columns and module uninstall drops tables. Confirm
-  destructive operations with the user first.
+- Schema changes keep removed columns (retired) and refuse lossy type changes;
+  dropping a column needs `allow_drop=True` (database-wide), and module uninstall
+  drops tables. Preview first (`module.preview`, `update --dry-run`, `doctor`)
+  and confirm destructive operations with the user. Ordinary requests never
+  retype or drop columns; only an explicit install/update does.
 - `jerp.config.json` currently contains development credentials; do not commit
   real secrets.
 

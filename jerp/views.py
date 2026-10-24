@@ -1,4 +1,4 @@
-"""View rendering + page/route/menu collection.
+"""View rendering + page/route collection.
 
 Modules declare a single ``routes`` tree in ``configure.json``. Each entry is
 either:
@@ -9,7 +9,8 @@ either:
 
 Every entry must have a ``view`` or ``children`` (otherwise a ``ValueError`` is
 raised). Pages with an ``endpoint`` become server routes; pages without one are
-served by ``/view?name=<view>``. Labelled entries become the (nested) menu.
+served by ``/view?name=<view>``. Labelled entries are synchronized into
+``sys.menu`` by :mod:`jerp.menus`.
 """
 
 from __future__ import annotations
@@ -52,10 +53,45 @@ def collect_views(module_names, cache_dir: str | Path = 'data/view') -> dict[str
   return result
 
 
+def collect_model_views(
+  pages, module_names, cache_dir: str | Path = 'data/view'
+) -> dict[str, str]:
+  """Model name -> the page view that renders it.
+
+  ``build-views`` records the ``model`` declared by each view's ``<Page>`` in
+  the manifest; pages are considered in declaration order, so the first page
+  registered for a model (normally its menu entry) wins. Used by the global
+  search to open a record's form.
+  """
+
+  cache_dir = Path(cache_dir)
+  view_models: dict[str, str] = {}
+
+  for name in module_names:
+    manifest = cache_dir / name / 'manifest.json'
+    if not manifest.is_file():
+      continue
+    try:
+      data = json.loads(manifest.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+      continue
+    for view_key, model in (data.get('page_models') or {}).items():
+      view_models.setdefault(view_key, model)
+
+  result: dict[str, str] = {}
+  for page in pages:
+    model = view_models.get(page['view'])
+    if model and model not in result:
+      result[model] = page['view']
+  return result
+
+
 # --- declarations ---------------------------------------------------------
 
 
-def _read_module_entries(modules_dir: str | Path, module_names):
+def read_module_entries(modules_dir: str | Path, module_names):
+  """Yield ``(module_name, routes)`` for each module that declares routes."""
+
   modules_dir = Path(modules_dir)
   for name in module_names:
     manifest = modules_dir / name / 'configure.json'
@@ -101,7 +137,6 @@ def _normalize(item: dict) -> dict:
     'menu': bool(item.get('menu', True)),
     'drawer': bool(item.get('drawer', True)),
     'hide': bool(item.get('hide', False)),
-    'add_to_home': bool(item.get('add_to_home', False)),
     'description': item.get('description'),
     'sequence': item.get('sequence', 0),
   }
@@ -111,7 +146,7 @@ def collect_pages(modules_dir: str | Path, module_names) -> list[dict]:
   """Flat list of normalized page declarations."""
 
   pages: list[dict] = []
-  for _name, entries in _read_module_entries(modules_dir, module_names):
+  for _name, entries in read_module_entries(modules_dir, module_names):
     for item in _iter_entries(entries):
       if item.get('view'):
         pages.append(_normalize(item))
@@ -124,98 +159,6 @@ def menu_href(page: dict) -> str:
   if endpoint:
     return endpoint + (('?' + urlencode(params)) if params else '')
   return '/view?' + urlencode({'name': page['view'], **params})
-
-
-def _menu_node(item: dict):
-  if item.get('hide') or not item.get('label'):
-    return None
-
-  node: dict = {'label': item['label'], 'sequence': item.get('sequence', 0)}
-  if item.get('view'):
-    node['href'] = menu_href(_normalize(item))
-    node['auth'] = bool(item.get('auth', True))
-  if item.get('img'):
-    node['img'] = item['img']
-  if item.get('description'):
-    node['description'] = item['description']
-  if item.get('add_to_home'):
-    node['add_to_home'] = True
-
-  children = [
-    child
-    for child in (_menu_node(c) for c in item.get('children') or [])
-    if child
-  ]
-  if children:
-    children.sort(key=lambda n: (n.get('sequence', 0), n['label']))
-    node['children'] = children
-  return node
-
-
-def collect_menu_tree(modules_dir: str | Path, module_names) -> list[dict]:
-  """Nested menu built from the labelled entries, sorted by ``sequence``."""
-
-  tree: list[dict] = []
-  for _name, entries in _read_module_entries(modules_dir, module_names):
-    for item in entries:
-      node = _menu_node(item)
-      if node:
-        tree.append(node)
-  tree.sort(key=lambda n: (n.get('sequence', 0), n['label']))
-  return tree
-
-
-def _first_href(item: dict):
-  if item.get('view'):
-    return menu_href(_normalize(item))
-  for child in item.get('children') or []:
-    href = _first_href(child)
-    if href:
-      return href
-  return None
-
-
-def collect_home_pages(modules_dir: str | Path, module_names) -> list[dict]:
-  """Pages flagged with ``add_to_home``, including hidden entries.
-
-  Hidden menu entries (for example the database manager) can still be surfaced
-  on the home page. Groups may be flagged too; they link to their first page.
-  """
-
-  entries: list[dict] = []
-
-  def walk(module_name, items, root_sequence):
-    for item in items:
-      if not isinstance(item, dict):
-        continue
-      if item.get('add_to_home'):
-        href = _first_href(item)
-        if href:
-          entries.append({
-            'label': item.get('label') or item.get('view') or 'Page',
-            'href': href,
-            'description': item.get('description'),
-            'img': item.get('img'),
-            'module': module_name,
-            'sequence': root_sequence,
-          })
-      if item.get('children'):
-        walk(module_name, item['children'], root_sequence)
-
-  for module_name, items in _read_module_entries(modules_dir, module_names):
-    for item in items:
-      if isinstance(item, dict):
-        walk(module_name, [item], item.get('sequence', 0))
-
-  entries.sort(key=lambda entry: entry.get('sequence', 0))
-  unique: list[dict] = []
-  seen: set[str] = set()
-  for entry in entries:
-    if entry['href'] in seen:
-      continue
-    seen.add(entry['href'])
-    unique.append(entry)
-  return unique
 
 
 def routes_from_pages(pages) -> dict[str, str]:
@@ -258,7 +201,7 @@ class ViewRenderer:
       self._shell_mtime = mtime
     return self._shell
 
-  def render(self, view_key, context, views, menus=None, routes=None, pages=None, home=None) -> str:
+  def render(self, view_key, context, views, routes=None, pages=None) -> str:
     html = self.shell()
 
     import_map = (
@@ -274,10 +217,6 @@ class ViewRenderer:
       + json.dumps(routes or {}) + '</script>',
       '<script id="__JERP_PAGES__" type="application/json">'
       + json.dumps(pages or {}) + '</script>',
-      '<script id="__JERP_MENUS__" type="application/json">'
-      + json.dumps(menus or []) + '</script>',
-      '<script id="__JERP_HOME__" type="application/json">'
-      + json.dumps(home or []) + '</script>',
       '<script id="__JERP_CONTEXT__" type="application/json">'
       + json.dumps(context or {}, default=str) + '</script>',
     ])
@@ -350,8 +289,6 @@ def render(view_key=None, context: dict | None = None) -> str:
   modules = _installed_modules(config)
   views = collect_views(modules, config.views_dir)
   pages = collect_pages(config.modules_path, modules)
-  menus = collect_menu_tree(config.modules_path, modules)
-  home = collect_home_pages(config.modules_path, modules)
   pages_map = {
     page['view']: {
       'auth': page['auth'],
@@ -365,8 +302,6 @@ def render(view_key=None, context: dict | None = None) -> str:
     view_key,
     context or {},
     views,
-    menus,
     routes_from_pages(pages),
     pages_map,
-    home,
   )

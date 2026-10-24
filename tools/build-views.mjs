@@ -34,6 +34,21 @@ function toSnake(name) {
     .toLowerCase();
 }
 
+/** The model a view's `<Page model="...">` renders, if it declares one. */
+function pageModel(file) {
+  try {
+    const source = fs.readFileSync(file, 'utf8');
+    const tag = source.match(/<Page\b[\s\S]*?>/);
+    if (!tag) {
+      return null;
+    }
+    const match = tag[0].match(/\bmodel=["']([^"']+)["']/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 function listModuleDirs(filter) {
   if (!fs.existsSync(modulesDir)) {
     return [];
@@ -99,7 +114,7 @@ for (const moduleName of listModuleDirs(filter)) {
   const viewsDir = path.join(moduleRoot, 'ui', 'src', 'views');
   const outDir = path.resolve('data', 'view', moduleName);
   const entryPoints = viewFiles(viewsDir);
-  const manifest = { module: moduleName, views: {} };
+  const manifest = { module: moduleName, views: {}, page_models: {} };
 
   for (const entry of entryPoints) {
     const rel = path.relative(viewsDir, entry);
@@ -107,6 +122,10 @@ for (const moduleName of listModuleDirs(filter)) {
     const key = `${moduleName}.${toSnake(path.basename(base))}`;
     const out = `${base.split(path.sep).join('/')}.js`;
     manifest.views[key] = out;
+    const model = pageModel(entry);
+    if (model) {
+      manifest.page_models[key] = model;
+    }
   }
 
   if (entryPoints.length) {

@@ -45,50 +45,6 @@ const STAT_DEFS: StatDef[] = [
   },
 ];
 
-interface HomeShortcut {
-  label: string;
-  href: string;
-  description?: string;
-  img?: string;
-  module?: string;
-  sequence?: number;
-}
-
-const FALLBACK_SHORTCUTS: HomeShortcut[] = [
-  {
-    module: 'core',
-    label: 'Contacts',
-    description: 'People, addresses and countries.',
-    href: '/view?name=core.contacts&view=list',
-  },
-  {
-    module: 'core',
-    label: 'Modules',
-    description: 'Install, update and remove modules.',
-    href: '/view?name=core.modules',
-  },
-  {
-    module: 'core',
-    label: 'Technical settings',
-    description: 'Models, fields, menus and external data.',
-    href: '/view?name=core.models',
-  },
-];
-
-/** Home shortcuts are injected by the server from ``add_to_home`` entries. */
-function readHomeShortcuts(): HomeShortcut[] {
-  const element = document.getElementById('__JERP_HOME__');
-  if (!element?.textContent) {
-    return [];
-  }
-  try {
-    const value = JSON.parse(element.textContent);
-    return Array.isArray(value) ? (value as HomeShortcut[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function Home({ context }: { context: Record<string, unknown> }) {
   const user = (context.user as string | undefined) ?? '';
   const [installed, setInstalled] = React.useState<string[] | null>(null);
@@ -143,16 +99,6 @@ export default function Home({ context }: { context: Record<string, unknown> }) 
   const visibleStats = STAT_DEFS.filter((stat) =>
     installedSet.has(stat.module),
   );
-  const homeShortcuts = React.useMemo(readHomeShortcuts, []);
-  const injectedShortcuts = homeShortcuts.filter(
-    (shortcut) => !shortcut.module || installedSet.has(shortcut.module),
-  );
-  const visibleShortcuts =
-    injectedShortcuts.length > 0
-      ? injectedShortcuts
-      : FALLBACK_SHORTCUTS.filter((shortcut) =>
-          installedSet.has(shortcut.module ?? 'core'),
-        );
 
   return (
     <div className="space-y-6">
@@ -209,45 +155,6 @@ export default function Home({ context }: { context: Record<string, unknown> }) 
           })}
         </section>
       ) : null}
-
-      <section className="space-y-3">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-brand-navy">Quick access</h2>
-            <p className="text-xs text-slate-400">Jump straight into a workspace.</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {visibleShortcuts.map((shortcut) => (
-            <a
-              key={shortcut.href}
-              href={shortcut.href}
-              className="group flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-cyan/60 hover:shadow-md"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-brand-navy">
-                  {shortcut.label}
-                </span>
-                <span className="mt-1 block text-xs leading-relaxed text-slate-400">
-                  {shortcut.description ?? 'Open this workspace.'}
-                </span>
-              </span>
-              {shortcut.img ? (
-                <img
-                  src={shortcut.img}
-                  alt=""
-                  className="h-8 w-8 flex-none rounded"
-                />
-              ) : (
-                <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-brand-white text-brand-blue transition group-hover:bg-brand-cyan/15">
-                  →
-                </span>
-              )}
-            </a>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

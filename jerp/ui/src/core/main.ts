@@ -1,29 +1,26 @@
 import { viewsRegistry } from './registry';
+import { beginLoading, endLoading } from './loading';
 import { isLoggedIn, readJson, registerBuiltinUtils } from './utils';
 import { registerBuiltinFields } from './components/fields';
 import { registerBuiltinViews } from './components/views';
+import {
+  configureSpaNavigation,
+  onSpaNavigate,
+  resolveTarget,
+} from './navigation';
 
 interface PageMeta {
   auth?: boolean;
 }
 
-/** Resolve the view to mount from the URL: `/page/<name>`, `/view?name=`, or a route. */
-function viewKeyFromRoute(routes: Record<string, string>): string | null {
-  const { pathname, search } = window.location;
-
-  const pageMatch = pathname.match(/^\/page\/(.+)$/);
-  if (pageMatch) {
-    return decodeURIComponent(pageMatch[1]);
-  }
-
-  if (pathname === '/view') {
-    const name = new URLSearchParams(search).get('name');
-    if (name) {
-      return name;
-    }
-  }
-
-  return routes[pathname] ?? null;
+function urlContext(): Record<string, unknown> {
+  const params = new URLSearchParams(window.location.search);
+  params.delete('name');
+  const context: Record<string, unknown> = {};
+  params.forEach((value, key) => {
+    context[key] = value;
+  });
+  return context;
 }
 
 async function boot(): Promise<void> {
@@ -44,41 +41,54 @@ async function boot(): Promise<void> {
 
   const routes = readJson<Record<string, string>>('__JERP_ROUTES__', {});
   const pages = readJson<Record<string, PageMeta>>('__JERP_PAGES__', {});
+  const baseContext = readJson<Record<string, unknown>>('__JERP_CONTEXT__', {});
 
-  // Merge URL query params into the context (the server does this in prod; in
-  // dev the shell is served by Vite, so the client fills it in).
-  const params = new URLSearchParams(window.location.search);
-  params.delete('name');
-  const urlContext: Record<string, unknown> = {};
-  params.forEach((value, key) => {
-    urlContext[key] = value;
-  });
-  const context = {
-    ...urlContext,
-    ...readJson<Record<string, unknown>>('__JERP_CONTEXT__', {}),
+  // Menu links and other internal anchors navigate without reloading the shell.
+  configureSpaNavigation({ routes, baseContext });
+
+  const mount = async (
+    key: string,
+    context: Record<string, unknown>,
+  ): Promise<void> => {
+    // Mirror the server's login guard (and enforce it in dev).
+    const meta = pages[key];
+    if (meta && meta.auth !== false && !isLoggedIn()) {
+      window.location.assign('/login');
+      return;
+    }
+    if (!viewsRegistry.has(key)) {
+      root.textContent = `View "${key}" is not available.`;
+      return;
+    }
+
+    beginLoading();
+    try {
+      await viewsRegistry.mount(key, root, context);
+    } catch (error) {
+      console.error(`Failed to load view "${key}"`, error);
+      root.textContent = `Failed to load view "${key}": ${(error as Error).message}`;
+    } finally {
+      endLoading();
+    }
   };
 
+  onSpaNavigate((target) => {
+    void mount(target.key, target.context);
+  });
+
+  const initialTarget = resolveTarget(new URL(window.location.href));
   const key =
-    root.dataset.view || viewKeyFromRoute(routes) || Object.keys(viewUrls)[0];
+    root.dataset.view || initialTarget?.key || Object.keys(viewUrls)[0];
 
   if (!key) {
     root.textContent = 'No view registered.';
     return;
   }
 
-  // Mirror the server's login guard (and enforce it in dev).
-  const meta = pages[key];
-  if (meta && meta.auth !== false && !isLoggedIn()) {
-    window.location.assign('/login');
-    return;
-  }
-
-  try {
-    await viewsRegistry.mount(key, root, context);
-  } catch (error) {
-    root.textContent = `Failed to load view "${key}": ${(error as Error).message}`;
-    throw error;
-  }
+  await mount(
+    key,
+    initialTarget?.context ?? { ...urlContext(), ...baseContext },
+  );
 }
 
 void boot();

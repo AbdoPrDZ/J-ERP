@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Model.save(draft_id)` / `record.save()` method.
 - Computed fields are evaluated on read and persisted on create/write/commit;
   parent totals are recomputed after child rows commit.
+- Deletes are refused when another record still references the target through a
+  many2one or file/image field (for example a country used by states); bulk
+  deletes run in one transaction so a blocked row leaves nothing half-deleted.
 
 #### UI
 
@@ -34,16 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parent totals.
 - Sticky navbar/page/table headers, server-side table pagination/sorting, card
   pagination, field validation and label fallbacks.
-- Modern Home dashboard with live counts and menu-driven quick access via
-  `add_to_home`.
+- SPA navigation for menu and internal links: clicks update the URL with the
+  History API and mount the next view inside the existing shell instead of
+  reloading the whole page.
+- Shell motion: a delayed global loading bar/spinner for API calls and view
+  mounts, animated drawer open/close with staggered links, view fade-ins and
+  animated header dropdowns.
+- The command palette loads searchable models from `GET /api/models` with
+  `Cache-Control: no-store` on every open instead of using injected page data.
+- Modern Home dashboard with live counts.
 - Redesigned login (full logo, split brand/form layout, password visibility) and
   database manager (card layout, stats, refreshed modals, no shell navbar).
 - New full logo asset and favicon.
 
 #### Navigation and tooling
 
-- `add_to_home` and `description` route options; server-injected
-  `__JERP_HOME__` built from installed modules (groups and hidden pages allowed).
+- Database-backed navigation: a new `sys.menu` model is synchronized from each
+  installed module's `configure.json` on install/update, and `GET /api/menu`
+  returns the active database's nested menu tree.
 - Vite dev payload is filtered by installed modules through the new
   `GET /__modules` endpoint instead of exposing every module on disk.
 - `build:views` now validates that every declared menu view has a build file and
@@ -65,8 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values and drops incompatible defaults before type changes.
 - `temp.model.dirty` migrated to JSONB; draft reads accept dicts and legacy JSON
   strings.
-- Menus and home shortcuts are resolved from the database's `sys_module` on each
-  render, so external installs/uninstalls appear after a refresh.
+- Menus are loaded from `sys.menu` through `GET /api/menu`; the
+  `__JERP_MENUS__` and `__JERP_HOME__` shell payloads were removed.
+- Home quick access and the `add_to_home` option were removed for now; the
+  option is kept in manifests but ignored until the home layout is redesigned.
 - Seed/multilingual writes no longer re-enter `ensure_loaded` recursively.
 
 ### Fixed

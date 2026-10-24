@@ -1,0 +1,23 @@
+- model:core.sys_module
+  - description: "وحدات النظام."
+  - fields:
+    - name:
+      - name: "الاسم"
+      - help: "اسم الوحدة التقنية."
+    - version:
+      - name: "الإصدار"
+      - help: "إصدار الوحدة."
+    - state:
+      - name: "الحالة"
+      - help: "حالة الوحدة."
+      - selection:
+        - installed: "مثبت"
+        - install_failed: "فشل التثبيت"
+        - not_installed: "غير مثبت"
+    - summary:
+      - name: "الملخص"
+      - help: "ملخص الوحدة."
+
+- view:core.modules
+  - title: "الوحدات"
+  - empty_message: "لم يتم العثور على أي وحدة."

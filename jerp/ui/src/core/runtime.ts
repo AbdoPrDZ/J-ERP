@@ -18,6 +18,8 @@ export type {
 } from './types';
 
 export { App } from './App';
+export { useMenu } from './menu';
+export type { MenuItem } from './menu';
 export { fieldRegistry } from './components/fields/registry';
 export { registerBuiltinFields } from './components/fields';
 export type { FieldProps, FieldComponent } from './components/fields/registry';

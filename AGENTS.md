@@ -49,8 +49,12 @@ local change.
 
 - PostgreSQL is the only supported database. Keep it that way unless asked.
 - No database is created at startup; keep the per-database module design.
-- Schema sync can **drop columns**; module uninstall **drops tables**. Confirm
-  with the user before any destructive database operation.
+- Schema sync **renames only when `renamed_from` is declared**, **keeps the
+  columns of removed fields** (marked retired) unless `allow_drop=True`, and
+  **refuses lossy type changes**; module uninstall **drops tables**. Ordinary
+  requests defer type changes, and `--allow-drop` is database-wide. Preview
+  first (`module.preview`, `update --dry-run`, `doctor`) and confirm with the
+  user before any destructive database operation.
 - Never point changes at production databases or run `DROP DATABASE`/`DROP
   TABLE` against user data without explicit approval.
 - `jerp.config.json` holds development credentials. Do not add real secrets.
@@ -99,6 +103,8 @@ npm run typecheck             # tsc -b
 npm run build                 # UI shell + shared React runtime -> data/ui
 npm run build:views           # module view bundles -> data/view
 npm run build:all             # both
+python -m jerp.cli --database <db> update --dry-run   # preview schema plan
+python -m jerp.cli --database <db> doctor             # retired columns
 ```
 
 Read `.agents/context/workflows.md` for module installation, adding models,

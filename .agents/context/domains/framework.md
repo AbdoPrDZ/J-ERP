@@ -75,6 +75,11 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
   module packages so metaclasses register their models.
 - `install` resolves dependency order (`core` first), syncs the schema, records
   `sys_module`, and builds views.
+- `Registry.preview()` plans a whole-database sync without applying it;
+  `retired_fields()` lists retired columns. Request-path sync (`sync_dirty`)
+  applies safe changes and declared renames but defers type changes and drops;
+  `install`/`update` call `init_models()` and raise `SchemaBlocked` after
+  committing the safe part.
 - Model classes are global (import-time), but the per-database registry filters
   them by installed modules. This is what makes per-database module sets work.
 
@@ -114,6 +119,11 @@ uploads and the shared UI kit. Business behavior belongs in `modules/`.
 - Do not add framework logic to modules or module logic to `jerp/`.
 - Preserve per-database isolation: never assume one global module set.
 - Keep `core` installable before any other module.
-- Schema sync is destructive-capable; changes to syncer logic can drop data.
+- Schema sync is conservative but not read-only: it adds tables/columns/indexes
+  automatically, renames only via `renamed_from`, retires removed columns, and
+  refuses lossy type changes. Ordinary requests apply safe changes but defer
+  type changes; only explicit install/update retype. `allow_drop=True` (and
+  module uninstall) can destroy data - preview with `preview`/`--dry-run`/
+  `doctor` and treat syncer changes accordingly.
 - Route decorators execute at import time, so controllers must be import-safe
   without an active database (lazy-import database-touching models).

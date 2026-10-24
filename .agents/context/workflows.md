@@ -56,7 +56,9 @@ match `^[a-z_][a-z0-9_]{0,62}$`.
 1. The module directory must contain `configure.json` with `name`, `version`,
    `summary`, and optionally `depends`, `logo`, `routes`.
 2. Install/update from the Modules page (virtual `module` model) or by calling
-   `module.install` / `module.update` through the model API.
+   `module.install` / `module.update` through the model API. The Modules page
+   previews the plan (`module.preview`) before updating and offers the
+   database-wide `allow_drop` option behind a destructive confirmation.
 3. Install runs schema sync for the module's models, records it in `sys_module`,
    and builds its views with `node tools/build-views.mjs <module>` when Node is
    available.
@@ -64,6 +66,18 @@ match `^[a-z_][a-z0-9_]{0,62}$`.
 5. Uninstall drops the module's tables — confirm with the user first.
 6. Menus and `add_to_home` entries are read from the database per request, so
    they disappear after a refresh; restart the backend if Python modules changed.
+
+CLI equivalents (preview first):
+
+```text
+python -m jerp.cli --database <db> update --dry-run      # plan, no DDL
+python -m jerp.cli --database <db> update                # apply safe changes
+python -m jerp.cli --database <db> update --allow-drop   # destructive
+python -m jerp.cli --database <db> doctor [--sql]        # retired columns (+ SQL)
+```
+
+`--dry-run` exits nonzero when the plan is blocked. A real update prints the
+applied plan; blocked changes make it exit nonzero after the safe part commits.
 
 ## Add A Model
 
@@ -79,8 +93,13 @@ match `^[a-z_][a-z0-9_]{0,62}$`.
 ## Add A Field
 
 Declare the field and update the module. The syncer adds the column and records
-it in `sys_field`. If the field replaces an existing column, the syncer may
-infer a rename; a genuinely removed field drops its column and its data.
+it in `sys_field`. Renaming a field requires `renamed_from='old_attribute'` on
+the new field; without it the old column is kept as retired and the new field
+starts empty. The request path applies declared renames automatically but defers
+type changes to an explicit update. A removed field keeps its column and is
+marked `state='retired'`; dropping it requires `allow_drop=True` through
+`SchemaSyncer` or `update --allow-drop` (database-wide; inspect with `doctor`
+first).
 
 For Odoo-style fields:
 

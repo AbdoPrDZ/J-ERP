@@ -8,8 +8,10 @@
  *  - __JERP_VIEWS__   : page name -> source module url (modules/<m>/ui/src/views)
  *  - __JERP_ROUTES__  : endpoint -> view
  *  - __JERP_PAGES__   : view -> { auth, header, menu }
- *  - __JERP_MENUS__   : nested menu tree (groups have `children`)
  *  - __JERP_CONTEXT__ : empty (dev)
+ *
+ * Menus and searchable models are no longer injected: the client fetches them
+ * from ``GET /api/menu`` and ``GET /api/models``.
  *
  * React stays a single instance because Vite serves both the shell and the
  * module views, so no import map is needed in dev.
@@ -42,82 +44,6 @@ function viewFiles(dir) {
   };
   walk(dir);
   return found;
-}
-
-function menuHref(item) {
-  const endpoint = item.endpoint || item.path;
-  const params = item.params || {};
-  if (endpoint) {
-    const query = new URLSearchParams(params).toString();
-    return query ? `${endpoint}?${query}` : endpoint;
-  }
-  return '/view?' + new URLSearchParams({ name: item.view, ...params }).toString();
-}
-
-function menuNode(item) {
-  if (!item || item.hide || !item.label) {
-    return null;
-  }
-  const node = { label: item.label, sequence: item.sequence ?? 0 };
-  if (item.view) {
-    node.href = menuHref(item);
-    node.auth = item.auth !== false;
-  }
-  if (item.img) {
-    node.img = item.img;
-  }
-  if (item.description) {
-    node.description = item.description;
-  }
-  if (item.add_to_home) {
-    node.add_to_home = true;
-  }
-  const children = (item.children || []).map(menuNode).filter(Boolean);
-  if (children.length) {
-    children.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.label.localeCompare(b.label));
-    node.children = children;
-  }
-  return node;
-}
-
-function firstHref(item) {
-  if (!item || typeof item !== 'object') {
-    return null;
-  }
-  if (item.view) {
-    return menuHref(item);
-  }
-  for (const child of item.children || []) {
-    const href = firstHref(child);
-    if (href) {
-      return href;
-    }
-  }
-  return null;
-}
-
-function collectHome(moduleName, items, rootSequence, out) {
-  for (const item of items || []) {
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-    if (item.add_to_home) {
-      const href = firstHref(item);
-      if (href) {
-        out.push({
-          label: item.label || item.view || 'Page',
-          href,
-          description: item.description,
-          img: item.img,
-          module: moduleName,
-          sequence: rootSequence,
-        });
-      }
-    }
-    if (item.children) {
-      collectHome(moduleName, item.children, rootSequence, out);
-    }
-  }
 }
 
 export default function jerpDev(modulesDir = 'modules') {
@@ -187,9 +113,6 @@ export default function jerpDev(modulesDir = 'modules') {
       const views = {};
       const routes = {};
       const pages = {};
-      const menus = [];
-      const home = [];
-      const configs = [];
       const enabled = installedModules;
 
       if (fs.existsSync(modulesRoot)) {
@@ -220,8 +143,6 @@ export default function jerpDev(modulesDir = 'modules') {
               continue;
             }
           }
-
-          configs.push(config);
 
           const viewsDir = path.join(moduleDir, 'ui', 'src', 'views');
           for (const file of viewFiles(viewsDir)) {
@@ -254,41 +175,13 @@ export default function jerpDev(modulesDir = 'modules') {
             }
           };
           walk(config.routes || config.pages || []);
-
-          for (const item of config.routes || config.pages || []) {
-            if (item && typeof item === 'object') {
-              collectHome(name, [item], item.sequence ?? 0, home);
-            }
-          }
         }
       }
-
-      for (const config of configs) {
-        for (const item of config.routes || config.pages || []) {
-          const node = menuNode(item);
-          if (node) {
-            menus.push(node);
-          }
-        }
-      }
-      menus.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.label.localeCompare(b.label));
-
-      home.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
-      const seen = new Set();
-      const homeEntries = home.filter((entry) => {
-        if (seen.has(entry.href)) {
-          return false;
-        }
-        seen.add(entry.href);
-        return true;
-      });
 
       const inject = [
         `<script id="__JERP_VIEWS__" type="application/json">${JSON.stringify(views)}</script>`,
         `<script id="__JERP_ROUTES__" type="application/json">${JSON.stringify(routes)}</script>`,
         `<script id="__JERP_PAGES__" type="application/json">${JSON.stringify(pages)}</script>`,
-        `<script id="__JERP_MENUS__" type="application/json">${JSON.stringify(menus)}</script>`,
-        `<script id="__JERP_HOME__" type="application/json">${JSON.stringify(homeEntries)}</script>`,
         `<script id="__JERP_CONTEXT__" type="application/json">{}</script>`,
       ].join('\n    ');
 

@@ -1,0 +1,23 @@
+- model:core.sys_module
+  - description: "Modules du système."
+  - fields:
+    - name:
+      - name: "Nom"
+      - help: "Le nom technical du module."
+    - version:
+      - name: "Version"
+      - help: "La version du module."
+    - state: "État"
+      - name: "État"
+      - help: "L'état du module."
+      - selection:
+        - installed: "Installé"
+        - install_failed: "Échec de l'installation"
+        - not_installed: "Non installé"
+    - summary:
+      - name: "Résumé"
+      - help: "Un résumé du module."
+
+- view:core.modules
+  - title: "Modules"
+  - empty_message: "Aucun module trouvé."

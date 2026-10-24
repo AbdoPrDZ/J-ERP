@@ -24,7 +24,11 @@ no rebuild of the shell is needed when a module's views change.
 - `draft.ts` — per-form session token, `DraftQueue` with an 800 ms debounce,
   flush on Save, and draft-token cleanup after commit.
 - `components/page/` — page composition: `Page` (view/id query params, header,
-  breadcrumb, view switcher), `Table`, `Cards`, `Form`, `FormTable`, `Action`.
+  breadcrumb, view switcher), `Table`, `Cards`, `Form`, `FormTable`, `Action`,
+  and `PlanDialog` (schema plan preview/confirmation for table actions).
+- A `Table` action may declare `preview` (a read-only model method) and
+  `allow_drop`; the table then opens `PlanDialog`, which loads the plan, offers
+  the database-wide drop only when allowed, and applies the action on confirm.
 - `Form` and `FormTable` edit server drafts: parent and child rows share a token,
   rows use `reuse: false`, inline cell editing sends changes through the draft
   queue, and parent computed values refresh when child drafts change.

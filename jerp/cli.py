@@ -6,6 +6,8 @@ Examples::
   python -m jerp.cli init   --database jerp
   python -m jerp.cli install stock --database jerp
   python -m jerp.cli update --database jerp
+  python -m jerp.cli update --database jerp --dry-run
+  python -m jerp.cli doctor --database jerp
   python -m jerp.cli modules --database jerp
 """
 
@@ -17,6 +19,8 @@ import sys
 
 from jerp.config import Config
 from jerp.db import DatabaseManager
+from jerp.dialect import quote_ident, quote_table
+from jerp.schema import SchemaBlocked
 
 
 def _manager(args) -> DatabaseManager:
@@ -67,11 +71,149 @@ def cmd_install(args) -> int:
   return 0
 
 
+def _describe_change(change: dict) -> str:
+  """One human-readable line for a plan change (or a blocked entry)."""
+
+  op = change.get('op', '?')
+  table = change.get('table')
+  column = change.get('column')
+  field = change.get('field')
+  target = '.'.join(part for part in (table, column) if part) or field or ''
+
+  if op == 'create_table':
+    detail = str(table or '')
+  elif op == 'rename_table':
+    detail = f"{change.get('old')} -> {table}"
+  elif op == 'rename_column':
+    detail = f"{target} (from {change.get('old')})"
+  elif op == 'alter_type':
+    detail = f"{target} ({change.get('from')} -> {change.get('to')})"
+  elif op == 'add_column':
+    detail = f"{target}{' (required)' if change.get('required') else ''}"
+  elif op == 'set_nullable':
+    detail = f"{target} ({'nullable' if change.get('nullable') else 'not null'})"
+  elif op == 'retire_column':
+    detail = f'{target} (kept)'
+  elif op == 'drop_column':
+    detail = f'{target} (destructive)'
+  elif op == 'create_index':
+    detail = f"{change.get('index')}{' (unique)' if change.get('unique') else ''}"
+  elif op == 'rename_index':
+    detail = f"{change.get('old')} -> {change.get('index')}"
+  elif op == 'drop_index':
+    detail = str(change.get('index') or '')
+  else:
+    detail = target
+
+  return f'  {op:<15} {detail}'.rstrip()
+
+
+def _format_plan(plan, database: str | None = None) -> str:
+  """Render a ``SchemaPlan`` as text for the CLI."""
+
+  title = f'Schema plan for {database or "(database)"}'
+  title += ' (dry run)' if plan.mode == 'plan' else ' (applied)'
+  lines = [title]
+
+  if plan.allow_drop:
+    lines.append(
+      '  allow-drop is ON for the whole database: retired columns may be dropped.'
+    )
+
+  if plan.changes:
+    lines.extend(_describe_change(change) for change in plan.changes)
+  else:
+    lines.append('  no changes')
+
+  if plan.blocked:
+    lines.append(f'Blocked ({len(plan.blocked)}):')
+    for item in plan.blocked:
+      lines.append(f'{_describe_change(item)}: {item.get("reason", "")}')
+
+  for warning in plan.warnings:
+    lines.append(f'Warning: {warning}')
+
+  if plan.destructive:
+    lines.append('This plan drops columns; the data cannot be recovered.')
+  return '\n'.join(lines)
+
+
 def cmd_update(args) -> int:
   manager = _manager(args)
-  registry = manager.registry(_database(args))
-  synced = registry.update(args.module, force=not args.no_force)
+  name = _database(args)
+  registry = manager.registry(name)
+  allow_drop = bool(getattr(args, 'allow_drop', False))
+
+  if getattr(args, 'dry_run', False):
+    try:
+      plan = registry.preview(args.module, allow_drop=allow_drop)
+    except ValueError as exc:
+      print(str(exc), file=sys.stderr)
+      return 1
+    print(_format_plan(plan, name))
+    return 1 if plan.blocked else 0
+
+  try:
+    synced = registry.update(
+      args.module, force=not args.no_force, allow_drop=allow_drop
+    )
+  except SchemaBlocked as exc:
+    print(_format_plan(exc.plan, name), file=sys.stderr)
+    print(
+      'The safe changes were applied; blocked changes were skipped. '
+      'Resolve them and run update again.',
+      file=sys.stderr,
+    )
+    return 1
+
   print(f'Synchronized: {", ".join(synced) if synced else "(nothing changed)"}')
+  plan = registry.last_schema_plan
+  if plan is not None and (plan.changes or plan.blocked or plan.warnings):
+    print(_format_plan(plan, name))
+  if allow_drop:
+    print('Retired columns were dropped where possible (database-wide).')
+  return 0
+
+
+def cmd_doctor(args) -> int:
+  manager = _manager(args)
+  name = _database(args)
+  registry = manager.registry(name)
+  try:
+    retired = registry.retired_fields()
+  except RuntimeError as exc:
+    print(f'Cannot inspect retired columns: {exc}', file=sys.stderr)
+    return 1
+
+  statements = [
+    f'ALTER TABLE {quote_table(row["table_name"])} '
+    f'DROP COLUMN {quote_ident(row["column_name"])};'
+    for row in retired
+  ]
+
+  if args.sql:
+    if not statements:
+      print('-- No retired columns.')
+    for statement in statements:
+      print(statement)
+    return 0
+
+  if not retired:
+    print(f'{name}: no retired columns.')
+    return 0
+
+  print(
+    f'{name}: {len(retired)} retired column(s) kept in the database '
+    f'(an update --allow-drop removes them):'
+  )
+  for row in retired:
+    print(
+      f'  {row["table_name"]}.{row["column_name"]}  '
+      f'(field {row["model"]}.{row["field_name"]}, {row["ttype"]})'
+    )
+  print('SQL:')
+  for statement in statements:
+    print(f'  {statement}')
   return 0
 
 
@@ -159,7 +301,21 @@ def build_parser() -> argparse.ArgumentParser:
   p = sub.add_parser('update', help='Synchronize installed modules')
   p.add_argument('module', nargs='?', default=None)
   p.add_argument('--no-force', action='store_true')
+  p.add_argument(
+    '--dry-run',
+    action='store_true',
+    help='Print the plan without changing the database',
+  )
+  p.add_argument(
+    '--allow-drop',
+    action='store_true',
+    help='Drop retired columns across the whole database (destructive)',
+  )
   p.set_defaults(func=cmd_update)
+
+  p = sub.add_parser('doctor', help='List retired columns kept in the database')
+  p.add_argument('--sql', action='store_true', help='Print only the DROP COLUMN SQL')
+  p.set_defaults(func=cmd_doctor)
 
   p = sub.add_parser('uninstall', help='Uninstall a module')
   p.add_argument('module')

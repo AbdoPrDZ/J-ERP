@@ -2,6 +2,7 @@ from jerp import fields
 from jerp.api import api_expose
 from jerp.env import Environment
 from jerp.models import Model
+from jerp.schema import SchemaBlocked
 
 
 class SysModule(Model):
@@ -79,6 +80,13 @@ class SysField(Model):
     name='Label',
     help='Human-readable field label.',
   )
+  state = fields.SelectionField(
+    selection=[('active', 'Active'), ('retired', 'Retired')],
+    name='Status',
+    default='active',
+    required=True,
+    help='Retired fields are no longer declared but their column still exists.',
+  )
 
 
 class Module(Model):
@@ -114,7 +122,10 @@ class Module(Model):
       is_installed = name in installed
       actions = []
       if is_installed:
-        actions.append({'label': 'Update', 'method': 'update', 'key': 'name'})
+        actions.append(
+          {'label': 'Update', 'method': 'update', 'key': 'name',
+           'preview': 'preview', 'allow_drop': True}
+        )
         if name != 'core':
           actions.append(
             {'label': 'Uninstall', 'method': 'uninstall', 'key': 'name',
@@ -195,8 +206,29 @@ class Module(Model):
 
   @classmethod
   @api_expose
-  def update(cls, name: str):
-    return {'updated': Environment.instance.registry().update(name)}
+  def preview(cls, name: str, allow_drop: bool = False):
+    """Return the schema plan for updating ``name`` without applying it."""
+
+    plan = Environment.instance.registry().preview(
+      name, allow_drop=bool(allow_drop)
+    )
+    return plan.as_dict()
+
+  @classmethod
+  @api_expose
+  def update(cls, name: str, allow_drop: bool = False):
+    registry = Environment.instance.registry()
+    try:
+      updated = registry.update(name, allow_drop=bool(allow_drop))
+    except SchemaBlocked as exc:
+      # Safe changes were committed; report the plan so the dialog can show
+      # exactly what was skipped instead of a generic failure.
+      return {'updated': [], 'plan': exc.plan.as_dict(), 'error': str(exc)}
+    plan = registry.last_schema_plan
+    return {
+      'updated': updated,
+      'plan': plan.as_dict() if plan is not None else None,
+    }
 
   @classmethod
   @api_expose

@@ -1,4 +1,5 @@
 from . import module
+from . import menu
 from . import data
 from . import temp
 from . import language

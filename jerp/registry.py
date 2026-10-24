@@ -11,14 +11,17 @@ built classes are what the API, views and schema syncer use.
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
 from jerp.builder import BuildResult, ModelBuilder
 from jerp.modules import ModuleManager
-from jerp.schema import SchemaSyncer
+from jerp.schema import SchemaBlocked, SchemaSyncer
 from jerp.seeds import SeedLoader
 from jerp.refs import backfill
+
+logger = logging.getLogger('jerp.registry')
 
 
 class Registry:
@@ -35,6 +38,9 @@ class Registry:
     self._schema_synced = False
     self._seeded_modules: set[str] = set()
     self._refs_ready = False
+    self._menus_ready = False
+    #: Last plan produced by a schema sync (see ``jerp.schema.SchemaPlan``).
+    self.last_schema_plan = None
     self.ready = False
 
   # --- loading ------------------------------------------------------------
@@ -67,6 +73,7 @@ class Registry:
       if self._result.changed:
         self._schema_synced = False
       self._seeded_modules &= set(self.modules)
+      self._menus_ready = False
       self.ready = True
       return self
 
@@ -133,16 +140,80 @@ class Registry:
       backfill(self)
     self._refs_ready = True
 
-  def init_models(self) -> None:
+  # --- menus --------------------------------------------------------------
+
+  def ensure_menus(self) -> None:
+    """Backfill modules that have no menu rows yet (existing databases)."""
+
+    with self._lock:
+      if self._menus_ready:
+        return
+      from jerp.menus import MenuSyncer
+
+      MenuSyncer(self.db, Path(self.manager.config.modules_path)).sync_missing(
+        self.modules
+      )
+      self._menus_ready = True
+
+  def _sync_menus(self, module_names) -> None:
+    from jerp.menus import MenuSyncer
+
+    MenuSyncer(self.db, Path(self.manager.config.modules_path)).sync_modules(
+      module_names
+    )
+    self._menus_ready = True
+
+  def _remove_menus(self, module_name: str) -> None:
+    from jerp.menus import MenuSyncer
+
+    MenuSyncer(self.db, Path(self.manager.config.modules_path)).remove_module(
+      module_name
+    )
+    self._menus_ready = True
+
+  def init_models(self, allow_drop: bool = False):
     """Synchronize the schema of every built model."""
 
     with self._lock:
-      SchemaSyncer(self.db).sync_models(self.models.values())
+      self.last_schema_plan = SchemaSyncer(self.db).sync_models(
+        self.models.values(), allow_drop=allow_drop
+      )
       self._schema_synced = True
       self._refs_ready = False
+      return self.last_schema_plan
+
+  def preview(self, name: str | None = None, allow_drop: bool = False):
+    """Return the plan for a full sync, without changing the database.
+
+    ``name`` only validates that the module is known; like an update, the plan
+    covers every model of the database.
+    """
+
+    with self._lock:
+      self.load()
+      if name and name not in self.modules:
+        raise ValueError(f"Module '{name}' is not installed in {self.db.name}.")
+      return SchemaSyncer(self.db).plan(
+        self.models.values(), allow_drop=allow_drop
+      )
+
+  def retired_fields(self) -> list[dict]:
+    """Retired columns still present in the database (read-only)."""
+
+    with self._lock:
+      self.load()
+      return SchemaSyncer(self.db).retired_fields(self.models.values())
 
   def sync_dirty(self) -> set[str]:
-    """Synchronize only models whose build fingerprint changed."""
+    """Synchronize only models whose build fingerprint changed.
+
+    Request handlers reach this through :meth:`ensure_loaded`, so it must never
+    take the process down: safe changes are applied, blocked ones are logged and
+    kept in ``last_schema_plan``. Declared renames are applied (they are
+    explicit and lossless), while type changes and drops are left to an explicit
+    update. Explicit install/update calls :meth:`init_models` instead, which
+    propagates :class:`SchemaBlocked`.
+    """
 
     with self._lock:
       if self._result is None:
@@ -155,7 +226,13 @@ class Registry:
         if name in self.models and not getattr(self.models[name], '_virtual', False)
       ]
       if models:
-        SchemaSyncer(self.db).sync_models(models)
+        try:
+          self.last_schema_plan = SchemaSyncer(self.db).sync_models(
+            models, allow_type_change=False
+          )
+        except SchemaBlocked as exc:
+          self.last_schema_plan = exc.plan
+          logger.warning('%s (database %s)', exc, self.db.name)
       self._schema_synced = True
       self._refs_ready = False
       return names
@@ -174,6 +251,7 @@ class Registry:
           self._seeded_modules.discard(module_name)
         self._apply_seeds()
         self._ensure_refs()
+        self._sync_menus(order)
         return order
       except Exception:
         # Do not leave newly recorded modules behind if the build/sync fails.
@@ -183,21 +261,28 @@ class Registry:
             self.db.execute(
               'DELETE FROM sys_module WHERE name = %s', [module_name]
             )
+            try:
+              self._remove_menus(module_name)
+            except Exception:
+              pass
         except Exception:
           pass
         self.ready = False
         raise
 
-  def update(self, name: str | None = None, force: bool = True) -> list[str]:
+  def update(
+    self, name: str | None = None, force: bool = True, allow_drop: bool = False
+  ) -> list[str]:
     with self._lock:
       synced = self.module_manager.update(name, force=force)
       self.load()
-      self.init_models()
+      self.init_models(allow_drop=allow_drop)
       targets = [name] if name else list(self.modules)
       for module_name in targets:
         self._seeded_modules.discard(module_name)
       self._apply_seeds()
       self._ensure_refs()
+      self._sync_menus(targets)
       return synced
 
   def uninstall(self, name: str) -> None:
@@ -207,6 +292,7 @@ class Registry:
       self._refs_ready = False
       self.load()
       self.init_models()
+      self._remove_menus(name)
 
   # --- accessors ----------------------------------------------------------
 

@@ -26,6 +26,27 @@ def quote_table(name: str) -> str:
   return quote_ident(name)
 
 
+def _type_family(code: str) -> str:
+  """The part of a canonical type before its parameters (``numeric(16,2)``)."""
+
+  family = str(code or '').split('(', 1)[0].strip()
+  # ``double precision`` is spelled out in field types but is one family.
+  return 'double' if family == 'double precision' else family
+
+
+def _type_params(code: str) -> tuple | None:
+  """Integer parameters of a canonical type, or ``None`` when unconstrained."""
+
+  text = str(code or '')
+  if '(' not in text or ')' not in text:
+    return None
+  inner = text[text.index('(') + 1:text.rindex(')')]
+  try:
+    return tuple(int(part) for part in inner.split(','))
+  except ValueError:
+    return None
+
+
 class PostgresDialect:
   """PostgreSQL specific SQL generation and type normalization."""
 
@@ -69,12 +90,77 @@ class PostgresDialect:
       if scale is not None:
         return f'numeric({precision},{scale})'
       return f'numeric({precision})'
+    # ``double`` is the canonical code but the field type spells out
+    # ``double precision``; compare against the same spelling.
+    if code == 'double':
+      return 'double precision'
     return code
 
   def column_signature(self, field) -> str:
     """Canonical type string for a declared field."""
 
     return field.column_type()
+
+  def can_cast_losslessly(self, old: str, new: str) -> bool:
+    """Whether ``old -> new`` can run as ``USING column::new`` without loss.
+
+    Used by the schema syncer to decide if a type change may be applied
+    automatically. Anything that can truncate, round, re-parse or reinterpret
+    values returns ``False`` and must be handled by an explicit migration.
+    """
+
+    if old == new:
+      return True
+
+    old_family = _type_family(old)
+    new_family = _type_family(new)
+
+    # Everything can be rendered as text; this is the one cast that never
+    # rejects existing values.
+    if new_family == 'text':
+      return True
+
+    # varchar -> varchar may widen; narrowing silently truncates.
+    if old_family == 'varchar' and new_family == 'varchar':
+      old_size = _type_params(old)
+      new_size = _type_params(new)
+      if new_size is None:
+        return True  # unbounded varchar
+      return old_size is not None and new_size[0] >= old_size[0]
+
+    # Integers may widen into integers, numeric or float. bigint -> float loses
+    # precision above 2**53, so floats are only accepted from smaller integers.
+    if old_family == 'smallint':
+      return new_family in ('integer', 'bigint', 'numeric', 'double')
+    if old_family == 'integer':
+      return new_family in ('bigint', 'numeric', 'double')
+    if old_family == 'bigint':
+      return new_family == 'numeric'
+
+    # numeric -> numeric is safe while precision and scale only grow.
+    if old_family == 'numeric' and new_family == 'numeric':
+      old_params = _type_params(old)
+      new_params = _type_params(new)
+      if new_params is None:
+        return True  # unbounded numeric
+      if old_params is None:
+        return False
+      old_precision, old_scale = old_params
+      new_precision, new_scale = new_params
+      return (
+        new_scale >= old_scale
+        and (new_precision - new_scale) >= (old_precision - old_scale)
+      )
+
+    # Calendar dates convert to timestamps at midnight; the reverse truncates.
+    if old_family == 'date' and new_family == 'timestamp':
+      return True
+
+    # JSON and JSONB share the same value domain (jsonb normalises it).
+    if {old_family, new_family} == {'json', 'jsonb'}:
+      return True
+
+    return False
 
   # --- DDL ----------------------------------------------------------------
 

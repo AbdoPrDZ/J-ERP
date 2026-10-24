@@ -1351,7 +1351,86 @@ class Model(BaseModel):
       self._recompute_computed()
     return rowcount > 0
 
+  @classmethod
+  def _references_to(cls, record_id) -> list[dict]:
+    """References that would be left dangling by deleting ``record_id``."""
+
+    from jerp.env import Environment
+
+    try:
+      registry = Environment.instance.registry()
+      registry.ensure_loaded()
+    except Exception:
+      return []
+
+    db = cls._database()
+    references: list[dict] = []
+
+    for model_name, model in registry.models.items():
+      if getattr(model, '_virtual', False) or not getattr(model, '_table', None):
+        continue
+
+      table_checked = False
+      table_exists = False
+
+      for field_name, field in model._fields.items():
+        comodel = getattr(field, 'comodel', None)
+        # File/image fields store a ``sys.file`` id without declaring a comodel.
+        if not comodel and isinstance(field, fields.FileField):
+          comodel = 'sys.file'
+        if comodel != cls._name:
+          continue
+        if not getattr(field, 'store', True) or not field.column_name:
+          continue
+
+        if not table_checked:
+          table_exists = db.table_exists(model._table)
+          table_checked = True
+        if not table_exists:
+          break
+
+        where = f'{quote_ident(field.column_name)} = %s'
+        params = [record_id]
+        if model._table == cls._table:
+          # A self-referencing field must not count the record itself.
+          where += f' AND {quote_ident(model._fields["id"].column_name)} <> %s'
+          params.append(record_id)
+
+        row = db.fetchone(
+          f'SELECT COUNT(*) AS total FROM {quote_table(model._table)} '
+          f'WHERE {where}',
+          params,
+        )
+        total = int(row['total']) if row and row.get('total') is not None else 0
+        if total:
+          references.append({
+            'model': model._name,
+            'field': field_name,
+            'label': field.name or field_name,
+            'count': total,
+          })
+
+    return references
+
+  @classmethod
+  def _assert_deletable(cls, record) -> None:
+    references = cls._references_to(record._values['id'])
+    if not references:
+      return
+
+    details = ', '.join(
+      f"{reference['count']} "
+      f"{reference['model'].split('.')[-1].replace('_', ' ')}"
+      f"{'' if reference['count'] == 1 else 's'} via {reference['label']}"
+      for reference in references
+    )
+    raise ValueError(
+      f'Cannot delete {cls._name} "{cls.display_name(record)}": '
+      f'it is referenced by {details}.'
+    )
+
   def unlink(self) -> bool:
+    type(self)._assert_deletable(self)
     db = self._database()
     sql = f'DELETE FROM {quote_table(self._table)} WHERE {quote_ident(self._fields["id"].column_name)} = %s'
     rowcount = db.execute(sql, [self._values['id']])
@@ -2521,9 +2600,11 @@ class Model(BaseModel):
       raise ValueError(f'Model "{cls._name}" does not support bulk delete.')
 
     deleted = 0
-    for record in cls.browse([int(value) for value in ids]):
-      if record.unlink():
-        deleted += 1
+    database = cls._database()
+    with database.transaction():
+      for record in cls.browse([int(value) for value in ids]):
+        if record.unlink():
+          deleted += 1
     return deleted
 
   # --- source cooperation -------------------------------------------------

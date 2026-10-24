@@ -199,11 +199,23 @@ export default function DbManager() {
               return (
                 <div
                   key={database}
-                  className={`flex flex-wrap items-center gap-4 rounded-xl border bg-white p-4 shadow-sm transition ${
+                  role="button"
+                  tabIndex={busy ? -1 : 0}
+                  aria-busy={busy}
+                  aria-label={`Open database ${database}`}
+                  aria-current={isActive ? 'true' : undefined}
+                  className={`flex cursor-pointer flex-wrap items-center gap-4 rounded-xl border bg-white p-4 shadow-sm transition focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-cyan/30 ${
                     isActive
                       ? 'border-brand-cyan/70 ring-4 ring-brand-cyan/10'
                       : 'border-slate-200 hover:border-brand-cyan/50 hover:shadow-md'
-                  }`}
+                  } ${busy ? 'pointer-events-none opacity-60' : ''}`}
+                  onClick={() => void select(database)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void select(database);
+                    }
+                  }}
                 >
                   <div
                     className={`flex h-11 w-11 flex-none items-center justify-center rounded-lg text-sm font-semibold ${
@@ -228,29 +240,20 @@ export default function DbManager() {
                     </div>
                     <p className="mt-1 text-xs text-slate-400">
                       {isActive
-                        ? 'Currently selected — continue to sign in.'
-                        : 'Select this workspace to sign in.'}
+                        ? 'Currently selected — click to sign in.'
+                        : 'Click to select this workspace and sign in.'}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      className={`rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:opacity-40 ${
-                        isActive
-                          ? 'bg-brand-blue text-white hover:bg-brand-blue-dark'
-                          : 'border border-slate-300 bg-white text-slate-700 hover:border-brand-cyan hover:bg-brand-cyan/5'
-                      }`}
-                      disabled={busy}
-                      onClick={() => void select(database)}
-                    >
-                      {isActive ? 'Continue' : 'Use database'}
-                    </button>
-                    <button
-                      type="button"
                       className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                       disabled={busy}
-                      onClick={() => setDeleting(database)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleting(database);
+                      }}
                     >
                       Delete
                     </button>

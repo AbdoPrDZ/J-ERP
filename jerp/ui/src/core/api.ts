@@ -1,27 +1,43 @@
+import { beginLoading, endLoading } from './loading';
+
 const prefix = '/api';
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${prefix}${path}`, {
-    method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    credentials: 'same-origin',
-  });
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  cache: RequestCache = 'default',
+): Promise<T> {
+  beginLoading();
 
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  try {
+    const response = await fetch(`${prefix}${path}`, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin',
+      cache,
+    });
 
-  if (!response.ok) {
-    const message = data && typeof data === 'object' && 'message' in data
-      ? String((data as { message: unknown }).message)
-      : response.statusText;
-    throw new Error(message);
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+
+    if (!response.ok) {
+      const message = data && typeof data === 'object' && 'message' in data
+        ? String((data as { message: unknown }).message)
+        : response.statusText;
+      throw new Error(message);
+    }
+    return data as T;
+  } finally {
+    endLoading();
   }
-  return data as T;
 }
 
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
+  /** GET without browser/HTTP caching (used for live metadata). */
+  getFresh: <T>(path: string) => request<T>('GET', path, undefined, 'no-store'),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),

@@ -17,7 +17,7 @@ updates.
 | File | Responsibility | Does not contain |
 |---|---|---|
 | `architecture.md` | Purpose, stack, layers, process/request flow, module system, build pipeline, top-level layout | Per-class or per-endpoint detail |
-| `database.md` | PostgreSQL-only model, per-database registry, declarative schema sync, system tables, naming/rename rules, data-safety constraints | Full table/column inventories |
+| `database.md` | PostgreSQL-only model, per-database registry, declarative schema sync (plan/apply, rename/retire rules), system tables, data-safety constraints | Full table/column inventories |
 | `api.md` | HTTP surface: model API contract, conventions for responses/errors, database scoping, uploads/storage, auth behavior | Handler-by-handler listings |
 | `workflows.md` | Recurring procedures: run, build, install module, add model/field, add page/view | Unstable temporary notes |
 | `conventions.md` | Code style, naming, module boundaries, frontend conventions, safety and verification rules | Generic language tutorials |

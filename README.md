@@ -18,7 +18,7 @@ J-ERP pairs a small declarative Python ORM over PostgreSQL with a React 19 + Typ
 - **Odoo-style models** - positional relation/selection fields, recordsets, many2one record access, one2many commands, computed fields with `@depends_on` and server-side `@on_change`.
 - **Server-side drafts** - forms and embedded tables edit `temp.model` drafts with a debounced on-change round-trip, reload-safe state and atomic parent/child commit.
 - **Multi-database management** - create, list, select and drop databases from the UI; access is scoped to the configured owner.
-- **Module-declared navigation** - menus, routes, page options, auth requirements and `add_to_home` shortcuts live in each module's `configure.json`.
+- **Database-backed navigation** - each module declares routes in `configure.json`; its menu entries are synchronized into `sys.menu` on install/update and served by `GET /api/menu`.
 - **Declarative page DSL** - compose pages from `Page`, `Table`, `Cards`, `Form`, `FormTable`, `FormField`, `FormGroup`, `Action` and friends; no per-view plumbing.
 - **Typed model API** — a single endpoint (`POST /api/model/<model>/<func>`) plus a typed client, instead of hand-written controllers for every screen.
 - **Views built on install** — module view bundles are compiled with esbuild into `data/view/<module>/` and loaded through an import map.
@@ -35,7 +35,8 @@ jerp/                   Framework: ORM, schema sync, router, server, views, modu
   api.py                Decorators: api_expose, on_change, depends_on
   schema.py             Declarative schema synchronization
   modules.py            Module discovery, install/update/uninstall, build hooks
-  views.py              Menu/route/view collection and shell rendering
+  views.py              Route/view collection and shell rendering
+  menus.py              sys.menu synchronization and tree loading
   server.py             HTTP dispatch, static + asset + storage routes
   ui/                   Shared React runtime, page DSL and field widgets
 modules/<name>/         Feature modules (models, controllers, views, assets)
@@ -132,7 +133,7 @@ A module is a directory under `modules/` containing a `configure.json`:
 }
 ```
 
-Route entries accept `label`, `view`, `endpoint`, `params`, `sequence`, `img`, `description`, `auth`, `header`, `menu`, `drawer`, `hide`, `add_to_home` and nested `children`. `sequence` orders the navigation tree; `auth` defaults to `true`; `add_to_home: true` adds a quick-access card (groups link to their first page, and hidden pages are allowed).
+Route entries accept `label`, `view`, `endpoint`, `params`, `sequence`, `img`, `description`, `auth`, `header`, `menu`, `drawer`, `hide` and nested `children`. `sequence` orders the navigation tree; `auth` defaults to `true`. Labelled entries are synchronized into `sys.menu` when the module is installed or updated.
 
 Models are plain Python classes:
 
@@ -175,6 +176,34 @@ class SaleOrderLine(models.Model):
 ```
 
 Records are recordsets: `search`/`browse` return a list-like `RecordSet`, many2one access returns the related record, and reverse one2many attributes (`order.lines`) are discovered automatically. In Python, `Model.new()` returns an in-memory record and `record.save()` writes it with its children in one transaction; with a token, `new` returns a server-side draft instead.
+
+### Schema changes
+
+There are no migration files: the schema is synchronized from the declared fields when a module is installed or updated. The syncer is deliberately conservative with existing data.
+
+- New tables, nullable or defaulted columns, and indexes are applied automatically.
+- **Renames are never guessed.** Declare the old attribute name on the new field:
+
+  ```python
+  margin = fields.FloatField(name='Margin', renamed_from='discount')
+  ```
+
+  The `discount` column is renamed in place and its values are preserved. Without `renamed_from`, the old column is kept as retired and the new field starts empty.
+- **Removing a field keeps its column.** The field's `sys.field` row is marked `retired` instead of deleted, so the data survives until an operator drops it explicitly.
+- **Type changes are applied only when the cast cannot lose data** (for example `integer → bigint`, `varchar(255) → text`). Anything that could truncate or re-parse values is reported as blocked and has to be handled deliberately. Ordinary API requests never retype a column: even a lossless change waits for an explicit module update.
+- **Declared renames run on requests; drops never do.** A rename is safe when it is declared with `renamed_from`, so the app keeps working after a deploy. Type changes and drops need an operator: use the Modules page (the Update dialog shows the plan) or the CLI.
+
+Check a pending plan without changing anything, then inspect retired columns:
+
+```text
+python -m jerp.cli --database <db> update --dry-run
+python -m jerp.cli --database <db> update --allow-drop   # destructive
+python -m jerp.cli --database <db> doctor                # retired columns + SQL
+```
+
+`--allow-drop` is database-wide: it drops every retired column whose model was synchronized by that update. Without it, removed fields keep their column and data.
+
+A sync always produces a plan first; `Registry.last_schema_plan` holds the result of the last one, including the SQL and the blocked entries.
 
 Views are React components declared with the page DSL and registered by name:
 

@@ -1,30 +1,5 @@
 import * as React from 'react';
-import { Page, PageContent } from '@jerp/ui';
-
-interface MenuItem {
-  label: string;
-  href?: string;
-  img?: string;
-  auth?: boolean;
-  sequence?: number;
-  description?: string;
-  add_to_home?: boolean;
-  children?: MenuItem[];
-}
-
-/** Menus are injected by the server from the installed modules' configure.json. */
-function readMenus(): MenuItem[] {
-  const element = document.getElementById('__JERP_MENUS__');
-  if (!element?.textContent) {
-    return [];
-  }
-  try {
-    const value = JSON.parse(element.textContent);
-    return Array.isArray(value) ? (value as MenuItem[]) : [];
-  } catch {
-    return [];
-  }
-}
+import { Page, PageContent, useMenu, type MenuItem } from '@jerp/ui';
 
 function targetLabel(item: MenuItem): string {
   if (!item.href) {
@@ -56,11 +31,6 @@ function MenuRows({
                   <span className="mr-1 text-slate-300">└</span>
                 ) : null}
                 {item.label}
-                {item.add_to_home ? (
-                  <span className="ml-2 rounded-full bg-brand-cyan/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-cyan-dark">
-                    Home
-                  </span>
-                ) : null}
               </span>
             </td>
             <td className="px-3 py-2">
@@ -92,7 +62,7 @@ function MenuRows({
 }
 
 export default function Menus() {
-  const menus = React.useMemo(readMenus, []);
+  const menus = useMenu();
 
   return (
     <Page
@@ -109,9 +79,12 @@ export default function Menus() {
       <PageContent>
         <div className="space-y-3">
           <p className="text-sm text-slate-500">
-            Menu entries come from each installed module&apos;s
+            Menu entries are stored in
+            <code className="mx-1 rounded bg-slate-100 px-1">sys.menu</code>
+            and synchronized from each installed module&apos;s
             <code className="mx-1 rounded bg-slate-100 px-1">configure.json</code>
-            routes. Groups have no target; pages link to their view or endpoint.
+            when it is installed or updated. Groups have no target; pages link to
+            their view or endpoint.
           </p>
           <div className="overflow-hidden rounded-lg border border-slate-200">
             <table className="w-full text-sm">

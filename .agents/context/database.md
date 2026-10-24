@@ -17,17 +17,40 @@
 - Tables come from model classes: subclass `jerp.models.Model`, declare
   `jerp.fields.*` attributes, set `_table` (and optionally `_name`).
 - `jerp.schema.SchemaSyncer` compares declared fields with the live schema and,
-  in a single transaction, creates tables, adds columns, alters types,
-  adjusts nullability, drops removed columns, and manages indexes.
+  in a single transaction, creates tables, adds columns, adjusts nullability,
+  applies lossless type changes (explicit syncs only), manages indexes, renames
+  columns declared with `renamed_from`, and drops columns only when
+  `allow_drop=True`.
 - When a required field is added to a non-empty table it is backfilled with a
   neutral value (`0` for numbers, `''` for text, `FALSE`, `CURRENT_DATE`) before
   `NOT NULL` is applied; required relations that cannot be guessed still fail.
-- Type changes drop an incompatible column default first, cast the column, then
-  restore the declared default. This matters for `text` → `jsonb` migrations.
-- `sys_model` / `sys_field` persist the model/field-to-column mapping. This is
-  what makes **renames deterministic**: a declared field whose column is missing
-  can be matched to a previously stored column and renamed instead of dropped
-  and recreated.
+  A **nullable** added column is not backfilled.
+- A type change is applied only when `PostgresDialect.can_cast_losslessly()`
+  accepts the pair (integer widening, `numeric` widening, varchar widening,
+  anything → `text`, `date` → `timestamp`, `json` ↔ `jsonb`). Anything that can
+  truncate or re-parse values is reported as `blocked`. An accepted change drops
+  an incompatible column default first, casts, then restores the declared
+  default (relevant when a column becomes `jsonb`).
+- `sys_model` / `sys_field` persist the model/field-to-column mapping. Renames
+  are **never guessed**: only a field that declares `renamed_from='old_attr'`
+  gets `ALTER TABLE ... RENAME COLUMN`, after the old name is resolved through
+  `sys_field` (`renamed_from` is consumed once).
+- `sys_field.state` is `active` or `retired`. A field that is no longer declared
+  keeps its row and column as `retired`; dropping it needs `allow_drop=True`.
+- A sync always produces a `SchemaPlan` (`changes`, `blocked`, `warnings`,
+  `destructive`, `as_dict()`), and each change carries its SQL. `plan()` /
+  `sync_models(..., mode='plan')` builds one without executing DDL;
+  `Registry.last_schema_plan` keeps the last one.
+- `Registry.preview(name, allow_drop)` plans a whole-database sync without
+  touching it (`name` only validates that the module is installed);
+  `Registry.retired_fields()` lists retired columns still present.
+- The request path (`Registry.sync_dirty()` through `ensure_loaded`) applies
+  safe changes, including declared renames, but reports lossless type changes as
+  blocked ("safe but deferred") and never drops. Blocked work is logged and kept
+  in `last_schema_plan`; it does not fail the request.
+- Explicit `init_models()` / install / update apply lossless type changes and
+  raise `SchemaBlocked` after the safe part has committed. A blocked rename also
+  skips adding its target column, so the rename can still run later.
 - Indexes created and dropped by the syncer are named `<table>_<column>_idx`.
   Only indexes with that managed prefix/suffix are ever dropped.
 - Virtual models (`_virtual = True`) have no table; the syncer skips them.
@@ -63,12 +86,19 @@
 
 ## Data Safety
 
-- Schema sync **drops columns** for fields no longer declared, and uninstalling
-  a module **drops its tables**. Treat both as destructive.
-- Renames are inferred; if inference is wrong the old column can be dropped.
-- DDL runs transactionally, so a failed sync leaves the database unchanged.
+- Schema sync **never guesses a rename** and **never drops a column by default**:
+  a removed field is marked `retired` and its data stays in place.
+  `allow_drop=True` drops recorded, undeclared columns; uninstalling a module
+  **drops its tables**. Treat the latter two as destructive.
+- Lossy type changes are blocked, not applied; resolve them deliberately.
+- DDL for one sync runs in one transaction, so an error rolls that sync back.
+  `SchemaBlocked` is raised *after* the transaction commits the safe part, so a
+  blocked plan can leave additive changes applied.
+- Preview before changing: `module.preview` (Modules dialog),
+  `update --dry-run`, and `doctor` (retired columns plus `DROP COLUMN` SQL) are
+  read-only. `--allow-drop` is database-wide.
 - Never run destructive database operations (drop database/table, uninstall a
-  module) without explicit user confirmation.
+  module, `allow_drop`) without explicit user confirmation.
 
 ## Typical Tables
 

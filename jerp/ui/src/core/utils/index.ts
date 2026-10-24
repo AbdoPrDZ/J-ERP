@@ -1,4 +1,5 @@
 import { utilsRegistry, type UtilFn } from './registry';
+import { openHref } from '../navigation';
 
 export { utilsRegistry } from './registry';
 export type { UtilFn } from './registry';
@@ -68,7 +69,10 @@ export function navigateTo(params: Record<string, unknown>): void {
     }
   }
   const query = url.searchParams.toString();
-  window.location.assign(url.pathname + (query ? `?${query}` : ''));
+  const href = url.pathname + (query ? `?${query}` : '');
+  if (!openHref(href)) {
+    window.location.assign(href);
+  }
 }
 
 /** Register the built-in J-ERP utilities. */

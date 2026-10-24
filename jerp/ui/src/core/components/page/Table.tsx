@@ -4,6 +4,7 @@ import { model, type DataClient } from '../../model';
 import { formatValue, navigateTo } from '../../utils';
 import { fieldRegistry } from '../fields/registry';
 import { Pagination, PAGE_SIZES } from './Pagination';
+import { PlanDialog, type PlanRequest } from './PlanDialog';
 import { FormTabContext, RecordContext, usePage } from './context';
 import { autoModelFields, useModelFields, useRelationLabels } from './useModelFields';
 
@@ -34,6 +35,10 @@ export interface TableAction {
   view?: string;
   key?: string;
   style?: 'primary' | 'default' | 'danger';
+  /** Model API method returning a plan; shown before ``method`` runs. */
+  preview?: string;
+  /** Offer the database-wide ``allow_drop`` option in the plan dialog. */
+  allow_drop?: boolean;
 }
 
 export interface TableInlineEdit {
@@ -215,6 +220,7 @@ export function Table({
   const [loading, setLoading] = React.useState(false);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [planRequest, setPlanRequest] = React.useState<PlanRequest | null>(null);
   const loadId = React.useRef(0);
   const tableRef = React.useRef<HTMLTableElement | null>(null);
 
@@ -336,6 +342,23 @@ export function Table({
       return;
     }
     if (!action.method) {
+      return;
+    }
+    if (action.preview) {
+      setError(null);
+      const name = record._label ?? record[key];
+      const label = name === undefined || name === null || name === ''
+        ? action.label
+        : `${action.label} ${String(name)}`;
+      setPlanRequest({
+        client: client ?? model(modelName),
+        method: action.method,
+        preview: action.preview,
+        allowDrop: Boolean(action.allow_drop),
+        field: key,
+        value: record[key],
+        label,
+      });
       return;
     }
     setBusy(String(record[key]));
@@ -710,6 +733,16 @@ export function Table({
         onPageChange={setPageNumber}
         onPageSizeChange={changePageSize}
         disabled={loading}
+      />
+
+      <PlanDialog
+        request={planRequest}
+        onClose={() => setPlanRequest(null)}
+        onApplied={async () => {
+          setPlanRequest(null);
+          await load();
+          onDataChanged?.();
+        }}
       />
     </div>
   );

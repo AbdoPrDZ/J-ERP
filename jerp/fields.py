@@ -51,7 +51,12 @@ def _relation_value(instance, field, value):
 
 
 class Field:
-  """Base class for every field type."""
+  """Base class for every field type.
+
+  ``renamed_from`` opts a renamed field into an automatic column rename. Without
+  it the syncer treats the old column as retired data and leaves it in place, so
+  a rename can never be guessed from declaration order.
+  """
 
   #: Canonical type code, also used by the dialect for normalization.
   ttype = 'field'
@@ -70,6 +75,7 @@ class Field:
     unique=False,
     index=False,
     column_name=None,
+    renamed_from=None,
     readonly=False,
     help=None,
     hide=False,
@@ -83,6 +89,9 @@ class Field:
     self.unique = unique
     self.index = index
     self.column_name = column_name
+    #: Previous attribute name of this field. The syncer renames its column
+    #: instead of adding a new one and leaving the old data behind.
+    self.renamed_from = renamed_from
     self.readonly = readonly
     self.help = help
     #: Exclude the field's value from API record data (reads). It stays in the

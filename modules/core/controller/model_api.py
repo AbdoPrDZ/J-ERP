@@ -11,9 +11,20 @@ The response is ``{"result": <value>}``.
 
 from __future__ import annotations
 
+from jerp import sessions
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 from jerp.models import Model
+
+#: System models whose records only administrators may read or change. Module
+#: lifecycle lives on the virtual ``module`` model, which guards itself.
+ADMIN_ONLY_MODELS = frozenset({
+  'sys.module',
+  'sys.model',
+  'sys.field',
+  'sys.session',
+  'sys.translation',
+})
 
 
 def _serialize(value):
@@ -42,6 +53,12 @@ class ModelApiController(controller.Controller):
         status=404,
       )
 
+    if model_name in ADMIN_ONLY_MODELS:
+      try:
+        sessions.require_admin()
+      except PermissionError as exc:
+        return response.json({'error': 'forbidden', 'message': str(exc)}, status=403)
+
     methods = getattr(model, '_api_methods', {}) or {}
     if func not in methods:
       return response.json(
@@ -58,6 +75,8 @@ class ModelApiController(controller.Controller):
       return response.json(
         {'error': 'bad_arguments', 'message': str(exc)}, status=400
       )
+    except PermissionError as exc:
+      return response.json({'error': 'forbidden', 'message': str(exc)}, status=403)
     except Exception as exc:
       return response.json(
         {'error': 'call_failed', 'message': str(exc)}, status=400

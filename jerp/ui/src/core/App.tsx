@@ -121,8 +121,8 @@ interface UserMenuUser {
 }
 
 function currentUsername(): string {
-  const match = document.cookie.match(/(?:^|;\s*)jerp_user=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  return readJson<{ user?: { username?: string } }>('__JERP_CONTEXT__', {})
+    .user?.username ?? '';
 }
 
 function UserMenu({ userName, onLogout }: { userName: string; onLogout: () => void }) {

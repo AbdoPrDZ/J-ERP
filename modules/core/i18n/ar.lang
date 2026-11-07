@@ -187,6 +187,9 @@ error.database_in_use_hint = أغلق هذه الاتصالات أو قم بتك
 # English: Invalid username or password.
 error.invalid_credentials = اسم المستخدم أو كلمة المرور غير صالحة.
 
+# English: Too many failed attempts. Try again later.
+error.too_many_attempts = محاولات فاشلة كثيرة. حاول مرة أخرى لاحقًا.
+
 # English: Workspace overview
 home.overview = نظرة عامة على مساحة العمل
 
@@ -676,6 +679,36 @@ model.sys.multi_lang_char.field.value.label = قيمة
 # English: Sys Multi Lang Char
 model.sys.multi_lang_char.title = سيس متعدد لانج شار
 
+# English: Active login sessions and their expiry.
+model.sys.session.description = جلسات تسجيل الدخول النشطة وتاريخ انتهائها.
+
+# English: Moment after which the session is no longer valid.
+model.sys.session.field.expires_at.help = اللحظة التي تصبح فيها الجلسة غير صالحة.
+
+# English: Expires
+model.sys.session.field.expires_at.label = ينتهي في
+
+# English: SHA-256 digest of the session cookie token.
+model.sys.session.field.token_hash.help = بصمة SHA-256 لرمز جلسة ملف تعريف الارتباط.
+
+# English: Token
+model.sys.session.field.token_hash.label = الرمز
+
+# English: User agent reported when the session was created.
+model.sys.session.field.user_agent.help = وكيل المستخدم المسجّل عند إنشاء الجلسة.
+
+# English: Client
+model.sys.session.field.user_agent.label = العميل
+
+# English: Identifier of the user that owns the session.
+model.sys.session.field.user_id.help = معرّف المستخدم الذي يملك الجلسة.
+
+# English: User
+model.sys.session.field.user_id.label = المستخدم
+
+# English: Sys Session
+model.sys.session.title = جلسة النظام
+
 # English: States or provinces belonging to a country.
 model.sys.state.description = الولايات أو المقاطعات التابعة لبلد ما.
 
@@ -762,6 +795,12 @@ model.sys.user.field.image.help = صورة الملف الشخصي لهذا ال
 
 # English: Avatar
 model.sys.user.field.image.label = الصورة الرمزية
+
+# English: Administrators manage modules, users and technical settings. The default keeps existing accounts privileged when the column is added to an older database; new accounts are created without it.
+model.sys.user.field.is_admin.help = يدير المسؤولون الوحدات والمستخدمين والإعدادات التقنية. تحافظ القيمة الافتراضية على صلاحيات الحسابات الحالية عند إضافة العمود؛ وتُنشأ الحسابات الجديدة دون هذه الصلاحية.
+
+# English: Administrator
+model.sys.user.field.is_admin.label = مسؤول
 
 # English: Preferred UI language. Empty uses the session or system default.
 model.sys.user.field.lang_id.help = لغة واجهة المستخدم المفضلة. فارغ يستخدم الجلسة أو النظام الافتراضي.
@@ -862,7 +901,7 @@ plan.apply = يتقدم
 # English: Applying…
 plan.applying = جارٍ التقديم…
 
-# English: Blocked ({count}) — these will be skipped:
+# English: Blocked ({count}) — nothing was applied:
 plan.blocked = محظور ({count}) — لم يتم تطبيق أي تغيير:
 
 # English: I understand the columns listed above will be permanently deleted.

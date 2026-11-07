@@ -299,9 +299,25 @@ def render(view_key=None, context: dict | None = None) -> str:
     }
     for page in pages
   }
+
+  context = dict(context or {})
+
+  # The shell needs the authenticated user for the avatar menu and the client
+  # side login guard; the session cookie itself is HttpOnly and unreadable by JS.
+  from jerp import sessions
+
+  user = sessions.current()
+  if user is not None:
+    context.setdefault('user', {
+      'id': user.id,
+      'name': user.name or user.username,
+      'username': user.username,
+      'is_admin': bool(user.is_admin),
+    })
+
   return _renderer.render(
     view_key,
-    context or {},
+    context,
     views,
     routes_from_pages(pages),
     pages_map,

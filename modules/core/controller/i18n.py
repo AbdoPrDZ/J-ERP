@@ -9,20 +9,20 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from jerp import i18n
+from jerp import i18n, sessions
 from jerp.env import Environment
 from jerp.http import controller, request, response, router
 
 
 class I18nController(controller.Controller):
 
-  @router.get('/i18n')
+  @router.get('/i18n', auth=False)
   def index(self):
     result = response.json(i18n.payload())
     result.headers['Cache-Control'] = 'no-store'
     return result
 
-  @router.post('/lang')
+  @router.post('/lang', auth=False)
   def set_language(self):
     req = request.current()
     payload = req.json() if req else {}
@@ -42,7 +42,8 @@ class I18nController(controller.Controller):
         status=400,
       )
 
-    username = req.cookies.get('jerp_user') if req else None
+    user = sessions.current()
+    username = user.username if user is not None else None
     saved = i18n.save_user_language(username, language.code) if username else False
 
     result = response.json({

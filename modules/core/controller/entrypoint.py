@@ -7,15 +7,16 @@ from jerp.http import controller, request, response, router
 
 
 def _logged_in() -> bool:
-  req = request.current()
-  return bool(req and req.cookies.get('jerp_user'))
+  from jerp import sessions
+
+  return sessions.current() is not None
 
 
 class EntryPointController(controller.Controller):
   """Only routes that need logic. Plain pages come from the modules'
   ``configure.json`` (see jerp.routes)."""
 
-  @router.route('/')
+  @router.route('/', auth=False)
   def index(self):
     """Home: route to login, or to the database manager / selected database."""
 
@@ -43,7 +44,7 @@ class EntryPointController(controller.Controller):
 
     return response.redirect('/db/manager')
 
-  @router.route('/view')
+  @router.route('/view', auth=False)
   def standard_view(self):
     """Standard endpoint for pages without an explicit endpoint.
 

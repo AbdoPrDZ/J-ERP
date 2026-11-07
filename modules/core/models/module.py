@@ -1,4 +1,4 @@
-from jerp import fields, i18n
+from jerp import fields, i18n, sessions
 from jerp.api import api_expose
 from jerp.env import Environment
 from jerp.models import Model
@@ -208,6 +208,7 @@ class Module(Model):
   @classmethod
   @api_expose
   def install(cls, name: str):
+    sessions.require_admin()
     return {'installed': Environment.instance.registry().install(name)}
 
   @classmethod
@@ -215,6 +216,7 @@ class Module(Model):
   def preview(cls, name: str, allow_drop: bool = False):
     """Return the schema plan for updating ``name`` without applying it."""
 
+    sessions.require_admin()
     plan = Environment.instance.registry().preview(
       name, allow_drop=bool(allow_drop)
     )
@@ -223,6 +225,7 @@ class Module(Model):
   @classmethod
   @api_expose
   def update(cls, name: str, allow_drop: bool = False):
+    sessions.require_admin()
     registry = Environment.instance.registry()
     try:
       updated = registry.update(name, allow_drop=bool(allow_drop))
@@ -239,5 +242,6 @@ class Module(Model):
   @classmethod
   @api_expose
   def uninstall(cls, name: str):
+    sessions.require_admin()
     Environment.instance.registry().uninstall(name)
     return {'uninstalled': name}

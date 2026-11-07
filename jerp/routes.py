@@ -24,17 +24,15 @@ def _module_names(modules_dir: str | Path) -> list[str]:
 
 def _view_handler(view: str, auth: bool):
   def handler():
-    from jerp import views
-    from jerp.http import request, response
+    from jerp import sessions, views
+    from jerp.http import response
 
     if not views.view_installed(view):
       return response.not_found(
         f'View "{view}" is not installed in this database.'
       )
-    if auth:
-      req = request.current()
-      if not (req and req.cookies.get('jerp_user')):
-        return response.redirect('/login')
+    if auth and sessions.current() is None:
+      return response.redirect('/login')
     return response.render(view, {})
 
   handler.__name__ = f'view_{view.replace(".", "_")}'

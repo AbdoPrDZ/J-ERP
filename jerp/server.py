@@ -35,6 +35,14 @@ ASSET_PREFIX = '/__assets/'
 STORAGE_PREFIX = '/__storage/'
 ENDPOINTS_PATH = '/__endpoints'
 MODULES_PATH = '/__modules'
+SESSION_PATH = '/__session'
+
+#: Largest request body accepted, uploads included.
+MAX_BODY_BYTES = 20 * 1024 * 1024
+
+
+class PayloadTooLarge(Exception):
+  """Raised when ``Content-Length`` exceeds :data:`MAX_BODY_BYTES`."""
 
 
 class Application:
@@ -78,6 +86,10 @@ class Application:
     # in the database selected by the browser cookie.
     if path == MODULES_PATH:
       return self._modules(request)
+
+    # The dev server injects the authenticated user into the shell context.
+    if path == SESSION_PATH:
+      return self._session(request)
 
     if path == self.api_prefix or path.startswith(self.api_prefix + '/'):
       return self._dispatch(request, strip=len(self.api_prefix))
@@ -137,6 +149,31 @@ class Application:
     except Exception:
       modules = []
     return json({'modules': modules})
+
+  def _session(self, request: Request) -> Response:
+    """The user of the request's session cookie (used by the Vite dev shell)."""
+
+    from jerp import sessions
+    from jerp.env import Environment
+
+    active = request.database()
+    if not active:
+      return json({'user': None})
+    try:
+      environment = Environment.instance
+      with environment.using(active):
+        with sessions.bind(request):
+          user = sessions.current()
+          if user is None:
+            return json({'user': None})
+          return json({'user': {
+            'id': user.id,
+            'name': user.name or user.username,
+            'username': user.username,
+            'is_admin': bool(user.is_admin),
+          }})
+    except Exception:
+      return json({'user': None})
 
   def _dispatch(self, request: Request, strip: int = 0) -> Response:
     endpoint = request.path[strip:] if strip else request.path
@@ -231,6 +268,8 @@ class Application:
 class _RequestHandler(BaseHTTPRequestHandler):
   protocol_version = 'HTTP/1.1'
   server_version = 'J-ERP/1.0'
+  #: Seconds an idle client may hold a connection open.
+  timeout = 60
 
   def log_message(self, fmt, *args):
     logger.info('%s - %s', self.address_string(), fmt % args)
@@ -240,11 +279,27 @@ class _RequestHandler(BaseHTTPRequestHandler):
       length = int(self.headers.get('Content-Length') or 0)
     except ValueError:
       length = 0
+    if length > MAX_BODY_BYTES:
+      raise PayloadTooLarge(length)
     return self.rfile.read(length) if length > 0 else b''
 
   def _respond(self, method: str) -> None:
-    request = Request.from_http(method, self.path, self.headers, self._read_body())
-    response = self.server.application.handle(request)
+    try:
+      body = self._read_body()
+    except PayloadTooLarge:
+      response = json(
+        {
+          'error': 'payload_too_large',
+          'message': (
+            f'Request body exceeds the {MAX_BODY_BYTES // (1024 * 1024)} MB '
+            f'limit.'
+          ),
+        },
+        status=413,
+      )
+    else:
+      request = Request.from_http(method, self.path, self.headers, body)
+      response = self.server.application.handle(request)
 
     body = response.body or b''
     self.send_response(response.status)

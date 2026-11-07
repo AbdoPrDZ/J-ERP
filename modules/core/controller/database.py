@@ -20,7 +20,7 @@ PROTECTED_DATABASES = {'postgres', 'template0', 'template1'}
 
 class DatabaseController(controller.Controller):
 
-  @router.get('/databases')
+  @router.get('/databases', auth=False)
   def index(self):
     environment = Environment.instance
     manager = environment.databases
@@ -36,7 +36,7 @@ class DatabaseController(controller.Controller):
       'error': error,
     })
 
-  @router.post('/databases')
+  @router.post('/databases', auth=False)
   def create(self):
     payload = self._payload()
     denied = self._check_master_key(payload)
@@ -86,6 +86,7 @@ class DatabaseController(controller.Controller):
             username=admin_login,
             name=admin_login,
             password=admin_password,
+            is_admin=True,
           )
 
       return response.json(
@@ -97,7 +98,7 @@ class DatabaseController(controller.Controller):
         {'error': 'create_failed', 'message': str(exc)}, status=500
       )
 
-  @router.post('/databases/select')
+  @router.post('/databases/select', auth=False)
   def select(self):
     name = str(self._payload().get('name') or '')
     manager = Environment.instance.databases
@@ -113,7 +114,7 @@ class DatabaseController(controller.Controller):
     )
     return result
 
-  @router.post('/databases/delete')
+  @router.post('/databases/delete', auth=False)
   def delete(self):
     """Drop a database and all of its data.
 

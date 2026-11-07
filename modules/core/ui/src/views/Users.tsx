@@ -106,6 +106,7 @@ export default function Users() {
           emptyMessage={t('view.core.users.empty_message')}
         >
           <TableField name="name" />
+          <TableField name="is_admin" />
         </Table>
 
         <Cards
@@ -123,8 +124,10 @@ export default function Users() {
 
           <FormField name="name" />
           <FormField name="username" />
+          <FormField name="password" />
           <FormField name="image" />
           <FormField name="lang_id" />
+          <FormField name="is_admin" />
         </Form>
       </PageContent>
     </Page>

@@ -50,6 +50,7 @@ export default function jerpDev(modulesDir = 'modules') {
   const modulesRoot = path.resolve(modulesDir);
   let backend = 'http://127.0.0.1:1347';
   let installedModules = new Set(['core']);
+  let sessionUser = null;
 
   return {
     name: 'jerp-dev',
@@ -104,6 +105,22 @@ export default function jerpDev(modulesDir = 'modules') {
           // Without the backend we cannot know what is installed. Keep the
           // shell minimal instead of leaking every module on disk.
           installedModules = new Set(['core']);
+        }
+
+        // The client-side login guard reads the user from __JERP_CONTEXT__.
+        // In dev the shell is served by Vite, so fetch the session here.
+        try {
+          const response = await fetch(`${backend}/__session`, {
+            headers: { cookie: req.headers.cookie || '' },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            sessionUser = data.user || null;
+          } else {
+            sessionUser = null;
+          }
+        } catch {
+          sessionUser = null;
         }
         next();
       });
@@ -182,7 +199,9 @@ export default function jerpDev(modulesDir = 'modules') {
         `<script id="__JERP_VIEWS__" type="application/json">${JSON.stringify(views)}</script>`,
         `<script id="__JERP_ROUTES__" type="application/json">${JSON.stringify(routes)}</script>`,
         `<script id="__JERP_PAGES__" type="application/json">${JSON.stringify(pages)}</script>`,
-        `<script id="__JERP_CONTEXT__" type="application/json">{}</script>`,
+        `<script id="__JERP_CONTEXT__" type="application/json">${JSON.stringify(
+          sessionUser ? { user: sessionUser } : {},
+        )}</script>`,
       ].join('\n    ');
 
       if (html.includes('<!--jerp:body-->')) {

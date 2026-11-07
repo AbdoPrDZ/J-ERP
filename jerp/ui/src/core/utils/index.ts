@@ -28,11 +28,22 @@ export function formatValue(value: unknown): string {
   return String(value);
 }
 
-/** Whether the current session is logged in (based on the ``jerp_user`` cookie). */
+export interface ShellUser {
+  id?: number;
+  name?: string;
+  username?: string;
+  is_admin?: boolean;
+}
+
+/** The authenticated user injected by the server, or ``null``. */
+export function currentUser(): ShellUser | null {
+  const context = readJson<{ user?: ShellUser }>('__JERP_CONTEXT__', {});
+  return context.user ?? null;
+}
+
+/** Whether the current session is logged in. */
 export function isLoggedIn(): boolean {
-  return document.cookie
-    .split(';')
-    .some((cookie) => cookie.trim().startsWith('jerp_user='));
+  return currentUser() !== null;
 }
 
 export interface UploadResult {

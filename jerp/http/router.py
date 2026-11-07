@@ -30,9 +30,12 @@ class RouteNotFound(Exception):
   """Raised by :meth:`Router.dispatch` when no route matches."""
 
 
-def route(method, endpoint=None, auth=False):
+def route(method, endpoint=None, auth=True):
   # ``@route('/')`` (endpoint only) defaults to GET; ``@route('POST', '/x')``
   # keeps the explicit form used by the method helpers below.
+  #
+  # Routes are protected by default: pass ``auth=False`` for the handful of
+  # genuinely public endpoints (login, language catalog, database manager).
   if endpoint is None:
     endpoint = method
     method = RequestMethod.GET
@@ -66,31 +69,31 @@ def route(method, endpoint=None, auth=False):
   return decorator
 
 
-def get(endpoint, auth=False):
+def get(endpoint, auth=True):
   return route(RequestMethod.GET, endpoint, auth=auth)
 
 
-def post(endpoint, auth=False):
+def post(endpoint, auth=True):
   return route(RequestMethod.POST, endpoint, auth=auth)
 
 
-def put(endpoint, auth=False):
+def put(endpoint, auth=True):
   return route(RequestMethod.PUT, endpoint, auth=auth)
 
 
-def delete(endpoint, auth=False):
+def delete(endpoint, auth=True):
   return route(RequestMethod.DELETE, endpoint, auth=auth)
 
 
-def patch(endpoint, auth=False):
+def patch(endpoint, auth=True):
   return route(RequestMethod.PATCH, endpoint, auth=auth)
 
 
-def options(endpoint, auth=False):
+def options(endpoint, auth=True):
   return route(RequestMethod.OPTIONS, endpoint, auth=auth)
 
 
-def head(endpoint, auth=False):
+def head(endpoint, auth=True):
   return route(RequestMethod.HEAD, endpoint, auth=auth)
 
 
@@ -162,8 +165,30 @@ class Router:
     route, params = match
 
     # Imported lazily to avoid a circular import with jerp.env.
+    from jerp import sessions
+    from jerp.http import response as http_response
     from jerp.http.middleware import database_scope
     from jerp.http.request import bind
 
-    with database_scope(request), bind(request):
+    with database_scope(request), bind(request), sessions.bind(request):
+      if route['auth'] and sessions.current() is None:
+        return _unauthorized(request)
       return route['handler'](**params)
+
+
+def _unauthorized(request):
+  """Redirect browsers to the login page; answer API clients with 401."""
+
+  from jerp.http import response
+
+  wants_html = (
+    request is not None
+    and request.method in ('GET', 'HEAD')
+    and 'text/html' in request.headers.get('accept', '').lower()
+  )
+  if wants_html:
+    return response.redirect('/login')
+  return response.json(
+    {'error': 'auth_required', 'message': 'Authentication is required.'},
+    status=401,
+  )

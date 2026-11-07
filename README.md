@@ -41,6 +41,7 @@ jerp/                   Framework: ORM, schema sync, router, server, views, modu
   views.py              Route/view collection and shell rendering
   menus.py              sys.menu synchronization and tree loading
   i18n.py               Language resolution, catalogs and translation
+  sessions.py           Server-side login sessions and admin checks
   translate.py          Google Translate client for the i18n CLI
   server.py             HTTP dispatch, static + asset + storage routes
   ui/                   Shared React runtime/SPA shell, page DSL and widgets
@@ -66,11 +67,14 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. Frontend build
+# 2. Configuration
+cp jerp.config.json.example jerp.config.json   # edit DB credentials + master key
+
+# 3. Frontend build
 npm install
 npm run build:all
 
-# 3. Run
+# 4. Run
 python app.py                    # http://127.0.0.1:1347
 ```
 
@@ -152,6 +156,7 @@ calls and UI `t()` calls.
 | `databases.owner` | Only databases owned by this role are listed (defaults to the connecting user) |
 | `databases.admin_user` / `admin_password` | Optional superuser used only to force-drop databases (or use `JERP_DB_ADMIN_USER` / `JERP_DB_ADMIN_PASSWORD`) |
 | `app.host` / `app.port` | HTTP bind address (default `127.0.0.1:1347`) |
+| `security.master_key` | Required to create or drop databases from the UI (or set `JERP_MASTER_KEY`); without it those actions return 503 |
 | `database` | Optional default database for standalone `Environment()` / `JERP_DATABASE` |
 | `modules_path` | Where modules are discovered (`modules`) |
 | `schema` | PostgreSQL schema used for tables (`public`) |
@@ -337,15 +342,19 @@ Forms and embedded tables keep unsaved state in `temp.model` drafts, grouped by 
 
 ## Security model
 
+- **Server-side sessions.** Login verifies the PBKDF2 hash and creates a row in `sys.session` with a random token; the browser only receives the token in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS). Requests are authenticated by looking up the token's SHA-256 digest, never by trusting a username cookie. Logout deletes the row; expired sessions are pruned.
+- **Deny by default.** HTTP routes require a session unless they declare `auth=False`. Only login/logout, the language catalog, and the database manager (guarded by the master key) are public. Page routes keep their manifest `auth` flag and redirect to `/login`.
+- **Roles.** `sys.user.is_admin` gates module install/update/uninstall and technical system models. Non-admins can read and edit only their own account and cannot promote themselves. Existing accounts are promoted when the column is first added, because the column default is `true`; accounts created through the API start without it. The first account of a new database is created as an administrator.
+- **Login throttling.** Five failed attempts per account inside five minutes return `429`.
+- **Request limits.** The HTTP server rejects bodies over 20 MB with `413` and times out idle connections.
 - Passwords are hashed with PBKDF2 (`pbkdf2_sha256`) before storage and excluded from API reads.
 - Requests run inside a database scope chosen by the client; `/__storage/<name>` serves a file only if a matching row exists in the selected database.
-- Page and menu auth is declared per entry (`auth` defaults to `true`).
 - `jerp.config.json` ships placeholder development credentials — never commit real secrets or point it at production data.
 
 ## Roadmap
 
-- Session-based authentication on top of the current cookie
-- Access rights and record rules per model
+- Access rights and record rules per model (groups, per-model ACLs)
+- Upload type whitelisting and per-user quotas
 - Reporting and export
 - Additional modules to demonstrate the framework
 

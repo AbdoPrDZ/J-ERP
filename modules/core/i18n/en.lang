@@ -187,6 +187,9 @@ error.database_in_use_hint = Close those connections or configure databases.admi
 # English: Invalid username or password.
 error.invalid_credentials = Invalid username or password.
 
+# English: Too many failed attempts. Try again later.
+error.too_many_attempts = Too many failed attempts. Try again later.
+
 # English: Workspace overview
 home.overview = Workspace overview
 
@@ -676,6 +679,36 @@ model.sys.multi_lang_char.field.value.label = Value
 # English: Sys Multi Lang Char
 model.sys.multi_lang_char.title = Sys Multi Lang Char
 
+# English: Active login sessions and their expiry.
+model.sys.session.description = Active login sessions and their expiry.
+
+# English: Moment after which the session is no longer valid.
+model.sys.session.field.expires_at.help = Moment after which the session is no longer valid.
+
+# English: Expires
+model.sys.session.field.expires_at.label = Expires
+
+# English: SHA-256 digest of the session cookie token.
+model.sys.session.field.token_hash.help = SHA-256 digest of the session cookie token.
+
+# English: Token
+model.sys.session.field.token_hash.label = Token
+
+# English: User agent reported when the session was created.
+model.sys.session.field.user_agent.help = User agent reported when the session was created.
+
+# English: Client
+model.sys.session.field.user_agent.label = Client
+
+# English: Identifier of the user that owns the session.
+model.sys.session.field.user_id.help = Identifier of the user that owns the session.
+
+# English: User
+model.sys.session.field.user_id.label = User
+
+# English: Sys Session
+model.sys.session.title = Sys Session
+
 # English: States or provinces belonging to a country.
 model.sys.state.description = States or provinces belonging to a country.
 
@@ -762,6 +795,12 @@ model.sys.user.field.image.help = Profile image for this user.
 
 # English: Avatar
 model.sys.user.field.image.label = Avatar
+
+# English: Administrators manage modules, users and technical settings. The default keeps existing accounts privileged when the column is added to an older database; new accounts are created without it.
+model.sys.user.field.is_admin.help = Administrators manage modules, users and technical settings. The default keeps existing accounts privileged when the column is added to an older database; new accounts are created without it.
+
+# English: Administrator
+model.sys.user.field.is_admin.label = Administrator
 
 # English: Preferred UI language. Empty uses the session or system default.
 model.sys.user.field.lang_id.help = Preferred UI language. Empty uses the session or system default.
@@ -862,7 +901,7 @@ plan.apply = Apply
 # English: Applying…
 plan.applying = Applying…
 
-# English: Blocked ({count}) — these will be skipped:
+# English: Blocked ({count}) — nothing was applied:
 plan.blocked = Blocked ({count}) — nothing was applied:
 
 # English: I understand the columns listed above will be permanently deleted.

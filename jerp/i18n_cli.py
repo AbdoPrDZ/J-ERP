@@ -123,7 +123,7 @@ CORE_EXTRA_KEYS.update({
   'home.stats.users.description': 'Workspace accounts',
   'plan.applying': 'Applying…',
   'plan.apply': 'Apply',
-  'plan.blocked': 'Blocked ({count}) — these will be skipped:',
+  'plan.blocked': 'Blocked ({count}) — nothing was applied:',
   'plan.confirm_destructive': (
     'I understand the columns listed above will be permanently deleted.'
   ),

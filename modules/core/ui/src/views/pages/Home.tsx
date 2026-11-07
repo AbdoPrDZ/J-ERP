@@ -45,8 +45,19 @@ const STAT_DEFS: StatDef[] = [
   },
 ];
 
+function displayName(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    const user = value as { name?: string; username?: string };
+    return user.name || user.username || '';
+  }
+  return '';
+}
+
 export default function Home({ context }: { context: Record<string, unknown> }) {
-  const user = (context.user as string | undefined) ?? '';
+  const user = displayName(context.user);
   const [installed, setInstalled] = React.useState<string[] | null>(null);
   const [counts, setCounts] = React.useState<Record<string, number | null>>({});
 

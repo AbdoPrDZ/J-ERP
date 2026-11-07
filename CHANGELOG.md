@@ -60,6 +60,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Module dependency cycles (`A → A`, `A → B → A`) are detected and reported
   with the cycle path during discovery and registry loading.
 
+#### Security
+
+- Server-side login sessions: `sys.session` stores a SHA-256 digest of a random
+  token, sent as an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS).
+  Logout revokes the row and expired sessions are pruned. The old
+  `jerp_user=<username>` cookie is no longer read or written.
+- Router-level authentication is deny-by-default: every route requires a
+  session unless it declares `auth=False` (login/logout, language catalog,
+  database manager). API calls get `401`, page requests redirect to `/login`.
+- `sys.user.is_admin` and role checks: module install/update/uninstall/preview
+  and the `sys.module`/`sys.model`/`sys.field`/`sys.session`/`sys.translation`
+  APIs require an administrator. Non-admins can only read and edit their own
+  account, cannot change `is_admin`, and cannot list other users. Existing
+  accounts are promoted when the column is added; the first account of a new
+  database is created as an administrator.
+- Login throttling (five failures per account per five minutes -> `429`).
+- Request bodies over 20 MB are rejected with `413`, and idle connections time
+  out after 60 seconds.
+
 #### UI
 
 - Draft-aware `Form`, `FormTable` and `Many2oneField`; inline row editing,
@@ -133,6 +152,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Authentication is now server-side: the `jerp_user` username cookie is gone, so
+  everyone signs in again after upgrading. `jerp_session` is HttpOnly, which
+  means the client reads the signed-in user from `__JERP_CONTEXT__` instead of
+  `document.cookie`.
+- Module lifecycle operations and technical system-model APIs require an
+  administrator; user management is limited to admins except for self-service
+  profile edits.
+- `sys.user` gains `is_admin` (required, default `true` so existing accounts stay
+  privileged); user creation through the API defaults it to `false`.
 - Schema sync backfills new required columns on non-empty tables with neutral
   values and drops incompatible defaults before type changes.
 - `temp.model.dirty` migrated to JSONB; draft reads accept dicts and legacy JSON
@@ -152,6 +180,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Vite dev shell injected an empty `__JERP_CONTEXT__`, so the client-side
+  login guard sent signed-in users back to `/login`; the dev plugin now reads
+  the session from `GET /__session` (using the browser's cookies).
 - Login hanging during localization seeds (recursive seed application).
 - Login `server_error` when `temp.model.dirty` changed from text to JSONB.
 - Sales/Stock menus lingering after uninstall in production and Vite dev.
@@ -159,8 +190,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- Session-based authentication on top of the current user cookie
-- Access rights and record rules per model
+- Access rights and record rules per model (groups, per-model ACLs)
+- Upload type whitelisting and per-user quotas
 - Reporting and data export
 
 ## [1.0.0] - 2026-10-23
